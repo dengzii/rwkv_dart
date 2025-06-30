@@ -27,6 +27,7 @@ class RWKVRuntime implements RWKV {
   late final rwkv_mobile _rwkv;
   ffi.Pointer<ffi.Void> _handlerPtr = ffi.nullptr;
   final _utf8codec = Utf8Codec(allowMalformed: true);
+  int _lastGenerationAt = 0;
 
   GenerationParam generationParam = GenerationParam.initial();
   TextGenerationState generationState = TextGenerationState.initial();
@@ -134,6 +135,8 @@ class RWKVRuntime implements RWKV {
 
   @override
   Stream<String> chat(List<String> history) {
+    _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
+
     ffi.Pointer<ffi.Pointer<ffi.Char>> inputsPtr = calloc
         .allocate<ffi.Pointer<ffi.Char>>(1000);
     for (var i = 0; i < history.length; i++) {
@@ -164,6 +167,8 @@ class RWKVRuntime implements RWKV {
 
   @override
   Stream<String> completion(String prompt) {
+    _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
+
     _checkGenerateState();
 
     final retVal = _rwkv.rwkvmobile_runtime_gen_completion_async(
@@ -230,8 +235,12 @@ class RWKVRuntime implements RWKV {
   }
 
   Stream<String> _generationResultPolling() {
+    final generationId = _lastGenerationAt;
     return Stream.periodic(const Duration(milliseconds: 20))
         .map((e) {
+          if (generationId != _lastGenerationAt) {
+            throw Exception('stopped due to generationId changed');
+          }
           _updateTextGenerationState();
           final content = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
             _handlerPtr,
