@@ -109,6 +109,10 @@ class RWKVIsolateProxy implements RWKV {
       _call(setGenerationParam, param).first;
 
   @override
+  Future<TextGenerationState> getGenerationState() async =>
+      await _call(getGenerationState).first as TextGenerationState;
+
+  @override
   Future stop() => _call(stop).first;
 
   Stream _call(Function method, [dynamic param]) async* {
@@ -216,6 +220,7 @@ class _IsolatedRWKV implements RWKV {
       setPenaltyParam,
       setSamplerParam,
       setGenerationParam,
+      getGenerationState,
       stop,
     };
     for (final method in methods) {
@@ -252,6 +257,10 @@ class _IsolatedRWKV implements RWKV {
   @override
   Future setGenerationParam(GenerationParam param) =>
       runtime.setGenerationParam(param);
+
+  @override
+  Future<TextGenerationState> getGenerationState() =>
+      runtime.getGenerationState();
 
   @override
   Future stop() => runtime.stop();

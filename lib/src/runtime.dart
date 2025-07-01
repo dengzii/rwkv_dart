@@ -72,6 +72,7 @@ class RWKVRuntime implements RWKV {
   Future init({String dynamicLibPath = ""}) async {
     _rwkv = rwkv_mobile(_loadDynamicLib());
     _rwkv.rwkvmobile_set_loglevel(logLevel.index);
+    logDebug('runtime initialized');
   }
 
   @override
@@ -184,15 +185,21 @@ class RWKVRuntime implements RWKV {
   }
 
   @override
-  Future setAudio(String path) {
-    // TODO: implement setAudio
-    throw UnimplementedError();
+  Future setAudio(String path) async {
+    final retVal = _rwkv.rwkvmobile_runtime_set_audio_prompt(
+      _handlerPtr,
+      path.toNativeChar(),
+    );
+    _tryThrowErrorRetVal(retVal);
   }
 
   @override
-  Future setImage(String path) {
-    // TODO: implement setImage
-    throw UnimplementedError();
+  Future setImage(String path) async {
+    final retVal = _rwkv.rwkvmobile_runtime_set_image_prompt(
+      _handlerPtr,
+      path.toNativeChar(),
+    );
+    _tryThrowErrorRetVal(retVal);
   }
 
   @override
@@ -229,6 +236,15 @@ class RWKVRuntime implements RWKV {
   }
 
   @override
+  Future<TextGenerationState> getGenerationState() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - generationState.timestamp > 100) {
+      generationState = _getTextGenerationState();
+    }
+    return generationState;
+  }
+
+  @override
   Future stop() async {
     final retVal = _rwkv.rwkvmobile_runtime_stop_generation(_handlerPtr);
     _tryThrowErrorRetVal(retVal);
@@ -241,7 +257,7 @@ class RWKVRuntime implements RWKV {
           if (generationId != _lastGenerationAt) {
             throw Exception('stopped due to generationId changed');
           }
-          _updateTextGenerationState();
+          generationState = _getTextGenerationState();
           final content = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
             _handlerPtr,
           );
@@ -264,7 +280,7 @@ class RWKVRuntime implements RWKV {
     }
   }
 
-  void _updateTextGenerationState() {
+  TextGenerationState _getTextGenerationState() {
     final prefillSpeed = _rwkv.rwkvmobile_runtime_get_avg_prefill_speed(
       _handlerPtr,
     );
@@ -276,12 +292,12 @@ class RWKVRuntime implements RWKV {
     );
     final isGenerating =
         _rwkv.rwkvmobile_runtime_is_generating(_handlerPtr) != 0;
-
-    generationState = TextGenerationState(
+    return TextGenerationState(
       isGenerating: isGenerating,
       prefillProgress: prefillProgress,
       prefillSpeed: prefillSpeed,
       decodeSpeed: decodeSpeed,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
     );
   }
 }

@@ -162,12 +162,14 @@ class TextGenerationState {
   final double prefillProgress;
   final double prefillSpeed;
   final double decodeSpeed;
+  final int timestamp;
 
   TextGenerationState({
     required this.isGenerating,
     required this.prefillProgress,
     required this.prefillSpeed,
     required this.decodeSpeed,
+    required this.timestamp,
   });
 
   factory TextGenerationState.initial() {
@@ -176,6 +178,7 @@ class TextGenerationState {
       prefillProgress: 0,
       prefillSpeed: 0,
       decodeSpeed: 0,
+      timestamp: 0,
     );
   }
 
@@ -184,24 +187,32 @@ class TextGenerationState {
     double? prefillProgress,
     double? prefillSpeed,
     double? decodeSpeed,
+    int? timestamp,
   }) {
     return TextGenerationState(
       isGenerating: isGenerating ?? this.isGenerating,
       prefillProgress: prefillProgress ?? this.prefillProgress,
       prefillSpeed: prefillSpeed ?? this.prefillSpeed,
       decodeSpeed: decodeSpeed ?? this.decodeSpeed,
+      timestamp: timestamp ?? this.timestamp,
     );
   }
 }
 
 abstract class RWKV {
+  /// Create a RWKV ffi instance.
   factory RWKV.create({String dynamicLibraryDir = ''}) =>
       RWKVRuntime(dynamicLibraryDir: dynamicLibraryDir);
 
+  /// Create a RWKV instance run in the isolate.
   factory RWKV.isolated() => RWKVIsolateProxy();
 
+  /// Initialize the RWKV ffi instance.
+  ///
+  /// This method should be called before any other methods.
   Future init();
 
+  /// Initialize the RWKV backend runtime, load and initialize the model.
   Future initRuntime(InitRuntimeParam param);
 
   Future setSamplerParam(SamplerParam param);
@@ -212,12 +223,15 @@ abstract class RWKV {
 
   Stream<String> chat(List<String> history);
 
+  Future<TextGenerationState> getGenerationState();
+
   Future setGenerationParam(GenerationParam param);
 
   Future setImage(String path);
 
   Future setAudio(String path);
 
+  /// Clear the backend runtime state.
   Future clearState();
 
   Future stop();
