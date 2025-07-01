@@ -11,7 +11,9 @@ const dynamicLibraryDir = r"D:\dev\rwkv_mobile_flutter\windows\";
 
 void main() async {
   test('test_text_generation', () async {
-    final rwkv = await RWKV.create(dynamicLibraryDir: dynamicLibraryDir);
+    // final rwkv = await RWKV.create(dynamicLibraryDir: dynamicLibraryDir);
+    final rwkv = await RWKV.isolated();
+
     // init ffi
     await rwkv.init();
     // init runtime, load model
@@ -26,8 +28,8 @@ void main() async {
     await rwkv.setGenerationParam(
       GenerationParam(
         maxTokens: 2000,
-        thinkingToken: GenerationParam.thinkingTokenZh,
-        chatReasoning: true,
+        thinkingToken: GenerationParam.thinkingTokenLight,
+        chatReasoning: false,
         completionStopToken: 0,
         prompt: GenerationParam.promptThinking,
       ),

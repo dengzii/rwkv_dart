@@ -1,5 +1,6 @@
 import 'dart:isolate';
 
+import 'package:rwkv_flutter/src/logger.dart';
 import 'package:rwkv_flutter/src/rwkv.dart';
 import 'package:rwkv_flutter/src/runtime.dart';
 
@@ -63,12 +64,16 @@ class RWKVIsolateProxy implements RWKV {
 
   @override
   Future init() async {
+    // init isolate
     ReceivePort receivePort = ReceivePort('rwkv_proxy_receive_port');
     events = receivePort.cast<IsolateMessage>().asBroadcastStream();
-    events.firstWhere((e) => e.isInitialMessage).then((value) {
-      sendPort = value.param as SendPort;
-    });
     await _IsolatedRWKV.spawn(receivePort.sendPort);
+    final initMessage = await events.firstWhere((e) => e.isInitialMessage);
+    sendPort = initMessage.param as SendPort;
+    logDebug('isolate init done');
+
+    // init runtime
+    await _call(init).first;
   }
 
   @override
@@ -106,13 +111,19 @@ class RWKVIsolateProxy implements RWKV {
   @override
   Future stop() => _call(stop).first;
 
-  Stream _call(Function method, [dynamic param]) {
+  Stream _call(Function method, [dynamic param]) async* {
     final message = IsolateMessage.fromFunc(method, param);
     sendPort.send(message);
-    return events
-        .takeWhile((e) => !e.done)
-        .where((e) => e.id == message.id)
-        .map((e) => e.param);
+    final src = events.where((e) => e.id == message.id);
+    await for (final message in src) {
+      if (message.error != '') {
+        throw Exception(message.error);
+      }
+      if (message.done) {
+        break;
+      }
+      yield message.param;
+    }
   }
 }
 
@@ -127,16 +138,34 @@ class _IsolatedRWKV implements RWKV {
   static Future<Isolate> spawn(SendPort sendPort) async {
     final rwkvIsolate = _IsolatedRWKV._();
     final initialMessage = IsolateMessage.initialMessage(sendPort);
-    final isolate = await Isolate.spawn<IsolateMessage>((message) async {
-      try {
-        await rwkvIsolate._handleMessage(
-          message.copyWith(error: '', done: false),
-        );
-      } catch (e) {
-        sendPort.send(message.copyWith(error: e.toString()));
-      }
-    }, initialMessage);
+    final isolate = await Isolate.spawn<IsolateMessage>(
+      rwkvIsolate._onIsolateSpawn,
+      initialMessage,
+    );
     return isolate;
+  }
+
+  Future _onIsolateSpawn(IsolateMessage init) async {
+    _initHandler();
+    sendPort = init.param as SendPort;
+    sendPort.send(init.copyWith(param: receivePort.sendPort));
+
+    receivePort.cast<IsolateMessage>().listen(
+      (message) async {
+        try {
+          await _handleMessage(message.copyWith(error: '', done: false));
+        } catch (e, s) {
+          logError(s);
+          sendPort.send(message.copyWith(error: e.toString()));
+        }
+      },
+      onError: (e) {
+        logError(e);
+      },
+      onDone: () {
+        logDebug('rwkv isolate receive port done');
+      },
+    );
   }
 
   Future _handleMessage(IsolateMessage message) async {
@@ -145,6 +174,7 @@ class _IsolatedRWKV implements RWKV {
 
     dynamic res;
     if (message.isInitialMessage) {
+      _initHandler();
       sendPort = param as SendPort;
       sendPort.send(message.copyWith(param: receivePort.sendPort));
     } else {
@@ -152,7 +182,7 @@ class _IsolatedRWKV implements RWKV {
       if (handler == null) {
         throw Exception('😡 Unknown method: $method');
       }
-      res = handler(param);
+      res = param == null ? handler() : handler(param);
     }
     if (res is Future) {
       res = await res;
@@ -174,9 +204,10 @@ class _IsolatedRWKV implements RWKV {
     }
   }
 
-  Future init() async {
+  void _initHandler() {
     final methods = {
       init,
+      initRuntime,
       chat,
       clearState,
       completion,
@@ -190,8 +221,9 @@ class _IsolatedRWKV implements RWKV {
     for (final method in methods) {
       handlers[method.toString()] = method;
     }
-    await runtime.init();
   }
+
+  Future init() => runtime.init();
 
   @override
   Future initRuntime(InitRuntimeParam param) => runtime.initRuntime(param);
