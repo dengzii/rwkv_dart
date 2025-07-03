@@ -63,8 +63,13 @@ class InitRuntimeParam {
 }
 
 class PenaltyParam {
+  /// 0.0 ~ 2.0
   final double presencePenalty;
+
+  /// 0.0 ~ 2.0
   final double frequencyPenalty;
+
+  /// 0.990 ~ 0.999
   final double penaltyDecay;
 
   const PenaltyParam({
@@ -73,6 +78,14 @@ class PenaltyParam {
     required this.penaltyDecay,
   });
 
+  factory PenaltyParam.initial() {
+    return PenaltyParam(
+      presencePenalty: 0.5,
+      frequencyPenalty: 0.5,
+      penaltyDecay: 0.996,
+    );
+  }
+
   toFfiParam() => Struct.create<penalty_params>()
     ..presence_penalty = presencePenalty
     ..frequency_penalty = frequencyPenalty
@@ -80,8 +93,13 @@ class PenaltyParam {
 }
 
 class SamplerParam {
+  /// 0.0~3.0
   final double temperature;
+
+  /// 0~128
   final int topK;
+
+  /// 0.0~1.0
   final double topP;
 
   SamplerParam({
@@ -89,6 +107,10 @@ class SamplerParam {
     required this.topK,
     required this.topP,
   });
+
+  factory SamplerParam.initial() {
+    return SamplerParam(temperature: 1.0, topK: 1, topP: 0.5);
+  }
 
   toFfiParam() => Struct.create<sampler_params>()
     ..temperature = temperature

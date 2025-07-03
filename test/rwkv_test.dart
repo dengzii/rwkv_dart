@@ -25,15 +25,7 @@ void main() async {
       ),
     );
     // set generation param
-    await rwkv.setGenerationParam(
-      GenerationParam(
-        maxTokens: 2000,
-        thinkingToken: GenerationParam.thinkingTokenLight,
-        chatReasoning: false,
-        completionStopToken: 0,
-        prompt: GenerationParam.promptThinking,
-      ),
-    );
+    await rwkv.setGenerationParam(GenerationParam.initial());
 
     final stream = rwkv.chat(['你好，我是小明，很高兴认识你。']).asBroadcastStream();
     // final stream = rwkv.completion("Hello, my name is").asBroadcastStream();
