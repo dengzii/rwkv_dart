@@ -50,6 +50,13 @@ enum Backend {
   }
 }
 
+class InitParam {
+  final String? dynamicLibDir;
+  final RWKVLogLevel logLevel;
+
+  InitParam({this.dynamicLibDir, this.logLevel = RWKVLogLevel.debug});
+}
+
 class InitRuntimeParam {
   final String modelPath;
   final String tokenizerPath;
@@ -223,8 +230,7 @@ class TextGenerationState {
 
 abstract class RWKV {
   /// Create a RWKV ffi instance.
-  factory RWKV.create({String dynamicLibraryDir = ''}) =>
-      RWKVRuntime(dynamicLibraryDir: dynamicLibraryDir);
+  factory RWKV.create() => RWKVRuntime();
 
   /// Create a RWKV instance run in the isolate.
   factory RWKV.isolated() => RWKVIsolateProxy();
@@ -232,7 +238,7 @@ abstract class RWKV {
   /// Initialize the RWKV ffi instance.
   ///
   /// This method should be called before any other methods.
-  Future init();
+  Future init(InitParam param);
 
   /// Initialize the RWKV backend runtime, load and initialize the model.
   Future initRuntime(InitRuntimeParam param);

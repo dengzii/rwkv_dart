@@ -63,7 +63,7 @@ class RWKVIsolateProxy implements RWKV {
   late final Stream<IsolateMessage> events;
 
   @override
-  Future init() async {
+  Future init(InitParam param) async {
     // init isolate
     ReceivePort receivePort = ReceivePort('rwkv_proxy_receive_port');
     events = receivePort.cast<IsolateMessage>().asBroadcastStream();
@@ -73,7 +73,7 @@ class RWKVIsolateProxy implements RWKV {
     logDebug('isolate init done');
 
     // init runtime
-    await _call(init).first;
+    await _call(init, param).first;
   }
 
   @override
@@ -158,6 +158,10 @@ class _IsolatedRWKV implements RWKV {
       (message) async {
         try {
           await _handleMessage(message.copyWith(error: '', done: false));
+        } on NoSuchMethodError {
+          final msg =
+              'MethodInvocationError: method:${message.method}, param:${message.param}.';
+          sendPort.send(message.copyWith(error: msg));
         } catch (e, s) {
           logError(s);
           sendPort.send(message.copyWith(error: e.toString()));
@@ -228,7 +232,7 @@ class _IsolatedRWKV implements RWKV {
     }
   }
 
-  Future init() => runtime.init();
+  Future init(InitParam param) => runtime.init(param);
 
   @override
   Future initRuntime(InitRuntimeParam param) => runtime.initRuntime(param);

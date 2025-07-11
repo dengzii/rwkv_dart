@@ -21,8 +21,8 @@ extension __ on ffi.Pointer<ffi.Char> {
 }
 
 class RWKVRuntime implements RWKV {
-  final String dynamicLibraryDir;
-  final RWKVLogLevel logLevel;
+  late final String dynamicLibraryDir;
+  late final RWKVLogLevel logLevel;
 
   late final rwkv_mobile _rwkv;
   ffi.Pointer<ffi.Void> _handlerPtr = ffi.nullptr;
@@ -32,10 +32,7 @@ class RWKVRuntime implements RWKV {
   GenerationParam generationParam = GenerationParam.initial();
   TextGenerationState generationState = TextGenerationState.initial();
 
-  RWKVRuntime({
-    this.dynamicLibraryDir = r"",
-    this.logLevel = RWKVLogLevel.debug,
-  });
+  RWKVRuntime();
 
   ffi.DynamicLibrary _loadDynamicLib() {
     ffi.DynamicLibrary openDynamicLib(String file) =>
@@ -69,7 +66,9 @@ class RWKVRuntime implements RWKV {
     throw Exception('😡 Unsupported platform');
   }
 
-  Future init({String dynamicLibPath = ""}) async {
+  Future init(InitParam param) async {
+    dynamicLibraryDir = param.dynamicLibDir ?? '';
+    logLevel = param.logLevel;
     _rwkv = rwkv_mobile(_loadDynamicLib());
     _rwkv.rwkvmobile_set_loglevel(logLevel.index);
     logDebug('runtime initialized');

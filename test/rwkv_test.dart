@@ -11,11 +11,11 @@ const dynamicLibraryDir = r"D:\dev\rwkv_mobile_flutter\windows\";
 
 void main() async {
   test('test_text_generation', () async {
-    // final rwkv = await RWKV.create(dynamicLibraryDir: dynamicLibraryDir);
+    // final rwkv = await RWKV.create();
     final rwkv = await RWKV.isolated();
 
     // init ffi
-    await rwkv.init();
+    await rwkv.init(InitParam(dynamicLibDir: dynamicLibraryDir));
     // init runtime, load model
     await rwkv.initRuntime(
       InitRuntimeParam(
