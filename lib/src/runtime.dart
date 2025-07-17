@@ -10,6 +10,20 @@ import 'package:rwkv_flutter/src/utils.dart';
 
 import 'rwkv_mobile_ffi.dart';
 
+const RWKV_SUCCESS = 0;
+const RWKV_ERROR_IO = 1 << 0;
+const RWKV_ERROR_INIT = 1 << 1;
+const RWKV_ERROR_EVAL = 1 << 2;
+const RWKV_ERROR_INVALID_PARAMETERS = 1 << 3;
+const RWKV_ERROR_BACKEND = 1 << 4;
+const RWKV_ERROR_MODEL = 1 << 5;
+const RWKV_ERROR_TOKENIZER = 1 << 6;
+const RWKV_ERROR_SAMPLER = 1 << 7;
+const RWKV_ERROR_RUNTIME = 1 << 8;
+const RWKV_ERROR_UNSUPPORTED = 1 << 9;
+const RWKV_ERROR_ALLOC = 1 << 10;
+const RWKV_ERROR_RELEASE = 1 << 11;
+
 extension _ on String {
   ffi.Pointer<ffi.Char> toNativeChar() => toNativeUtf8().cast<ffi.Char>();
 
@@ -126,6 +140,32 @@ class RWKVRuntime implements RWKV {
 
     _tryThrowErrorRetVal(retVal);
     logDebug('model loaded');
+  }
+
+  @override
+  Future loadEmbedding(String path) async {
+    final retVal = _rwkv.rwkvmobile_init_embedding(
+      _handlerPtr,
+      path.toNativeChar(),
+    );
+    _tryThrowErrorRetVal(retVal);
+  }
+
+  @override
+  Future<List<num>> embed(String text) async {
+    final textPtr = text.toNativeChar();
+    final size = 1024 * ffi.sizeOf<ffi.Float>();
+    final embedding = calloc.allocate<ffi.Float>(size);
+    final retVal = _rwkv.rwkvmobile_embed(_handlerPtr, textPtr, embedding);
+    _tryThrowErrorRetVal(retVal);
+    final embeddingList = embedding.asTypedList(1024);
+    calloc.free(embedding);
+    return embeddingList.toList();
+  }
+
+  @override
+  Future<num> similarity(SimilarityParam param) async {
+    return 0;
   }
 
   Future<String> dumpLog() async {
@@ -274,6 +314,9 @@ class RWKVRuntime implements RWKV {
   }
 
   void _tryThrowErrorRetVal(int retVal) {
+    if (retVal == RWKV_ERROR_INVALID_PARAMETERS) {
+      throw Exception('invalid param');
+    }
     if (retVal != 0) {
       throw Exception('non-zero return value: $retVal');
     }

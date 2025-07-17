@@ -80,6 +80,17 @@ class RWKVIsolateProxy implements RWKV {
   Future initRuntime(InitRuntimeParam param) => _call(initRuntime, param).first;
 
   @override
+  Future loadEmbedding(String path) => _call(loadEmbedding, path).first;
+
+  @override
+  Future<List<num>> embed(String text) async =>
+      await _call(embed, text).first as List<num>;
+
+  @override
+  Future<num> similarity(SimilarityParam param) async =>
+      _call(similarity, param).first as num;
+
+  @override
   Stream<String> chat(List<String> history) =>
       _call(chat, history).cast<String>();
 
@@ -216,6 +227,9 @@ class _IsolatedRWKV implements RWKV {
     final methods = {
       init,
       initRuntime,
+      loadEmbedding,
+      embed,
+      similarity,
       chat,
       clearState,
       completion,
@@ -236,6 +250,15 @@ class _IsolatedRWKV implements RWKV {
 
   @override
   Future initRuntime(InitRuntimeParam param) => runtime.initRuntime(param);
+
+  @override
+  Future loadEmbedding(String path) => runtime.loadEmbedding(path);
+
+  @override
+  Future<List<num>> embed(String text) => runtime.embed(text);
+
+  @override
+  Future<num> similarity(SimilarityParam param) => runtime.similarity(param);
 
   @override
   Stream<String> chat(List<String> history) => runtime.chat(history);

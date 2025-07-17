@@ -228,7 +228,15 @@ class TextGenerationState {
   }
 }
 
+class SimilarityParam {
+  final List<num> a;
+  final List<num> b;
+
+  const SimilarityParam({required this.a, required this.b});
+}
+
 abstract class RWKV {
+
   /// Create a RWKV ffi instance.
   factory RWKV.create() => RWKVRuntime();
 
@@ -242,6 +250,12 @@ abstract class RWKV {
 
   /// Initialize the RWKV backend runtime, load and initialize the model.
   Future initRuntime(InitRuntimeParam param);
+
+  Future loadEmbedding(String path);
+
+  Future<List<num>> embed(String text);
+
+  Future<num> similarity(SimilarityParam param);
 
   Future setSamplerParam(SamplerParam param);
 
