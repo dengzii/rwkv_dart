@@ -53,8 +53,13 @@ enum Backend {
 class InitParam {
   final String? dynamicLibDir;
   final RWKVLogLevel logLevel;
+  final bool initBackend;
 
-  InitParam({this.dynamicLibDir, this.logLevel = RWKVLogLevel.debug});
+  InitParam({
+    this.dynamicLibDir,
+    this.logLevel = RWKVLogLevel.debug,
+    this.initBackend = true,
+  });
 }
 
 class InitRuntimeParam {
@@ -236,7 +241,6 @@ class SimilarityParam {
 }
 
 abstract class RWKV {
-
   /// Create a RWKV ffi instance.
   factory RWKV.create() => RWKVRuntime();
 
@@ -251,9 +255,9 @@ abstract class RWKV {
   /// Initialize the RWKV backend runtime, load and initialize the model.
   Future initRuntime(InitRuntimeParam param);
 
-  Future loadEmbedding(String path);
+  Future loadEmbeddingModel(String path);
 
-  Future<List<num>> embed(String text);
+  Future<List<List<num>>> getEmbeddings(List<String> text);
 
   Future<num> similarity(SimilarityParam param);
 

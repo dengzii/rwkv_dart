@@ -85,6 +85,12 @@ class RWKVRuntime implements RWKV {
     logLevel = param.logLevel;
     _rwkv = rwkv_mobile(_loadDynamicLib());
     _rwkv.rwkvmobile_set_loglevel(logLevel.index);
+
+    if (param.initBackend) {
+      final r = Backend.webRwkv.asArgument.toNativeChar();
+      _handlerPtr = _rwkv.rwkvmobile_runtime_init_with_name(r);
+    }
+
     logDebug('runtime initialized');
   }
 
@@ -143,8 +149,8 @@ class RWKVRuntime implements RWKV {
   }
 
   @override
-  Future loadEmbedding(String path) async {
-    final retVal = _rwkv.rwkvmobile_init_embedding(
+  Future loadEmbeddingModel(String path) async {
+    final retVal = _rwkv.rwkvmobile_load_embedding_model(
       _handlerPtr,
       path.toNativeChar(),
     );
@@ -152,15 +158,41 @@ class RWKVRuntime implements RWKV {
   }
 
   @override
-  Future<List<num>> embed(String text) async {
-    final textPtr = text.toNativeChar();
-    final size = 1024 * ffi.sizeOf<ffi.Float>();
-    final embedding = calloc.allocate<ffi.Float>(size);
-    final retVal = _rwkv.rwkvmobile_embed(_handlerPtr, textPtr, embedding);
-    _tryThrowErrorRetVal(retVal);
-    final embeddingList = embedding.asTypedList(1024);
-    calloc.free(embedding);
-    return embeddingList.toList();
+  Future<List<List<num>>> getEmbeddings(List<String> text) async {
+    const dimension = 1024;
+    final List<List<double>> result = [];
+    final textPtr = calloc.allocate<ffi.Pointer<ffi.Char>>(text.length);
+    final size = text.length * dimension * ffi.sizeOf<ffi.Float>();
+    final outputs = calloc.allocate<ffi.Float>(size);
+
+    try {
+      for (var i = 0; i < text.length; i++) {
+        textPtr[i] = text[i].toNativeUtf8().cast<ffi.Char>();
+      }
+      int ret = _rwkv.rwkvmobile_get_embedding(
+        _handlerPtr,
+        textPtr,
+        text.length,
+        outputs,
+      );
+      _tryThrowErrorRetVal(ret);
+
+      final list = outputs.asTypedList(dimension * text.length);
+
+      for (var i = 0; i < text.length; i++) {
+        final List<double> row = [];
+        for (var j = 0; j < dimension; j++) {
+          row.add(list[i * dimension + j]);
+        }
+        result.add(row);
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      calloc.free(textPtr);
+      calloc.free(outputs);
+    }
+    return result;
   }
 
   @override
