@@ -2,7 +2,7 @@ import 'dart:isolate';
 
 import 'package:rwkv_flutter/src/logger.dart';
 import 'package:rwkv_flutter/src/rwkv.dart';
-import 'package:rwkv_flutter/src/runtime.dart';
+import 'package:rwkv_flutter/src/backend.dart';
 
 class IsolateMessage {
   final String id;
@@ -77,19 +77,7 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
-  Future initRuntime(InitRuntimeParam param) => _call(initRuntime, param).first;
-
-  @override
-  Future loadEmbeddingModel(String path) =>
-      _call(loadEmbeddingModel, path).first;
-
-  @override
-  Future<List<List<num>>> getEmbeddings(List<String> text) async =>
-      await _call(getEmbeddings, text).first as List<List<num>>;
-
-  @override
-  Future<num> similarity(SimilarityParam param) async =>
-      _call(similarity, param).first as num;
+  Future initBackend(InitBackendParam param) => _call(initBackend, param).first;
 
   @override
   Stream<String> chat(List<String> history) =>
@@ -125,7 +113,11 @@ class RWKVIsolateProxy implements RWKV {
       await _call(getGenerationState).first as TextGenerationState;
 
   @override
-  Future stop() => _call(stop).first;
+  Stream<TextGenerationState> generationStateChangeStream() =>
+      _call(generationStateChangeStream).cast<TextGenerationState>();
+
+  @override
+  Future stopGeneration() => _call(stopGeneration).first;
 
   Stream _call(Function method, [dynamic param]) async* {
     final message = IsolateMessage.fromFunc(method, param);
@@ -145,7 +137,7 @@ class RWKVIsolateProxy implements RWKV {
 
 class _IsolatedRWKV implements RWKV {
   final Map<String, Function> handlers = {};
-  late final RWKVRuntime runtime = RWKVRuntime();
+  late final RWKVBackend runtime = RWKVBackend();
   late final SendPort sendPort;
   late final ReceivePort receivePort = ReceivePort('rwkv_isolate_receive_port');
 
@@ -227,10 +219,7 @@ class _IsolatedRWKV implements RWKV {
   void _initHandler() {
     final methods = {
       init,
-      initRuntime,
-      loadEmbeddingModel,
-      getEmbeddings,
-      similarity,
+      initBackend,
       chat,
       clearState,
       completion,
@@ -240,7 +229,8 @@ class _IsolatedRWKV implements RWKV {
       setSamplerParam,
       setGenerationParam,
       getGenerationState,
-      stop,
+      generationStateChangeStream,
+      stopGeneration,
     };
     for (final method in methods) {
       handlers[method.toString()] = method;
@@ -250,17 +240,7 @@ class _IsolatedRWKV implements RWKV {
   Future init(InitParam param) => runtime.init(param);
 
   @override
-  Future initRuntime(InitRuntimeParam param) => runtime.initRuntime(param);
-
-  @override
-  Future loadEmbeddingModel(String path) => runtime.loadEmbeddingModel(path);
-
-  @override
-  Future<List<List<num>>> getEmbeddings(List<String> text) =>
-      runtime.getEmbeddings(text);
-
-  @override
-  Future<num> similarity(SimilarityParam param) => runtime.similarity(param);
+  Future initBackend(InitBackendParam param) => runtime.initBackend(param);
 
   @override
   Stream<String> chat(List<String> history) => runtime.chat(history);
@@ -292,5 +272,9 @@ class _IsolatedRWKV implements RWKV {
       runtime.getGenerationState();
 
   @override
-  Future stop() => runtime.stop();
+  Stream<TextGenerationState> generationStateChangeStream() =>
+      runtime.generationStateChangeStream();
+
+  @override
+  Future stopGeneration() => runtime.stopGeneration();
 }

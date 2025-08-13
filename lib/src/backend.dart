@@ -34,7 +34,7 @@ extension __ on ffi.Pointer<ffi.Char> {
   String toDartString() => cast<Utf8>().toDartString();
 }
 
-class RWKVRuntime implements RWKV {
+class RWKVBackend implements RWKV {
   late final String dynamicLibraryDir;
   late final RWKVLogLevel logLevel;
 
@@ -42,11 +42,14 @@ class RWKVRuntime implements RWKV {
   ffi.Pointer<ffi.Void> _handlerPtr = ffi.nullptr;
   final _utf8codec = Utf8Codec(allowMalformed: true);
   int _lastGenerationAt = 0;
+  int _generationPosition = 0;
 
   GenerationParam generationParam = GenerationParam.initial();
   TextGenerationState generationState = TextGenerationState.initial();
+  StreamController<TextGenerationState> _controllerGenerationState =
+      StreamController.broadcast();
 
-  RWKVRuntime();
+  RWKVBackend();
 
   ffi.DynamicLibrary _loadDynamicLib() {
     ffi.DynamicLibrary openDynamicLib(String file) =>
@@ -65,7 +68,7 @@ class RWKVRuntime implements RWKV {
       if (abi == ffi.Abi.windowsArm64) {
         return openDynamicLib('rwkv_mobile-arm64.dll');
       }
-      throw Exception('😡 Unsupported ABI: ${abi.toString()}');
+      throw Exception('Unsupported ABI: ${abi.toString()}');
     }
     if (Platform.isLinux) {
       final abi = ffi.Abi.current();
@@ -75,9 +78,9 @@ class RWKVRuntime implements RWKV {
       if (abi == ffi.Abi.linuxArm64) {
         return openDynamicLib('librwkv_mobile-linux-aarch64.so');
       }
-      throw Exception('😡 Unsupported ABI: ${abi.toString()}');
+      throw Exception('Unsupported ABI: ${abi.toString()}');
     }
-    throw Exception('😡 Unsupported platform');
+    throw Exception('Unsupported platform');
   }
 
   Future init(InitParam param) async {
@@ -91,13 +94,14 @@ class RWKVRuntime implements RWKV {
       _handlerPtr = _rwkv.rwkvmobile_runtime_init_with_name(r);
     }
 
-    logDebug('runtime initialized');
+    logDebug('ffi initialized');
   }
 
   @override
-  Future initRuntime(InitRuntimeParam param) async {
+  Future initBackend(InitBackendParam param) async {
     if (_handlerPtr.address != 0) {
-      _rwkv.rwkvmobile_runtime_release(_handlerPtr);
+      final retVal = _rwkv.rwkvmobile_runtime_release(_handlerPtr);
+      _tryThrowErrorRetVal(retVal);
       logDebug('release runtime');
       _handlerPtr = ffi.nullptr;
     }
@@ -110,6 +114,7 @@ class RWKVRuntime implements RWKV {
       case Backend.mnn:
       case Backend.coreml:
         _handlerPtr = _rwkv.rwkvmobile_runtime_init_with_name(backendName);
+        break;
       case Backend.qnn:
         // TODO: better solution for this
         final tempDir = '';
@@ -124,7 +129,7 @@ class RWKVRuntime implements RWKV {
         );
     }
     if (_handlerPtr.address == 0) {
-      throw Exception('😡 Failed to initialize runtime');
+      throw Exception('failed to initialize runtime');
     }
     var retVal = _rwkv.rwkvmobile_runtime_load_tokenizer(
       _handlerPtr,
@@ -146,58 +151,6 @@ class RWKVRuntime implements RWKV {
 
     _tryThrowErrorRetVal(retVal);
     logDebug('model loaded');
-  }
-
-  @override
-  Future loadEmbeddingModel(String path) async {
-    final retVal = _rwkv.rwkvmobile_load_embedding_model(
-      _handlerPtr,
-      path.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
-  }
-
-  @override
-  Future<List<List<num>>> getEmbeddings(List<String> text) async {
-    const dimension = 1024;
-    final List<List<double>> result = [];
-    final textPtr = calloc.allocate<ffi.Pointer<ffi.Char>>(text.length);
-    final size = text.length * dimension * ffi.sizeOf<ffi.Float>();
-    final outputs = calloc.allocate<ffi.Float>(size);
-
-    try {
-      for (var i = 0; i < text.length; i++) {
-        textPtr[i] = text[i].toNativeUtf8().cast<ffi.Char>();
-      }
-      int ret = _rwkv.rwkvmobile_get_embedding(
-        _handlerPtr,
-        textPtr,
-        text.length,
-        outputs,
-      );
-      _tryThrowErrorRetVal(ret);
-
-      final list = outputs.asTypedList(dimension * text.length);
-
-      for (var i = 0; i < text.length; i++) {
-        final List<double> row = [];
-        for (var j = 0; j < dimension; j++) {
-          row.add(list[i * dimension + j]);
-        }
-        result.add(row);
-      }
-    } catch (e) {
-      rethrow;
-    } finally {
-      calloc.free(textPtr);
-      calloc.free(outputs);
-    }
-    return result;
-  }
-
-  @override
-  Future<num> similarity(SimilarityParam param) async {
-    return 0;
   }
 
   Future<String> dumpLog() async {
@@ -228,7 +181,8 @@ class RWKVRuntime implements RWKV {
     );
     _tryThrowErrorRetVal(retVal);
 
-    return _generationResultPolling();
+    final isResume = history.length % 2 == 0;
+    return _generationResultPolling(resume: isResume);
   }
 
   @override
@@ -307,36 +261,55 @@ class RWKVRuntime implements RWKV {
   }
 
   @override
+  Stream<TextGenerationState> generationStateChangeStream() =>
+      _controllerGenerationState.stream;
+
+  @override
   Future<TextGenerationState> getGenerationState() async {
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - generationState.timestamp > 100) {
-      generationState = _getTextGenerationState();
+      _updateTextGenerationState();
     }
     return generationState;
   }
 
   @override
-  Future stop() async {
+  Future stopGeneration() async {
     final retVal = _rwkv.rwkvmobile_runtime_stop_generation(_handlerPtr);
     _tryThrowErrorRetVal(retVal);
+    await Future.delayed(Duration(milliseconds: 50));
+    _updateTextGenerationState();
   }
 
-  Stream<String> _generationResultPolling() {
+  Stream<String> _generationResultPolling({bool resume = false}) {
     final generationId = _lastGenerationAt;
+    if (!resume) {
+      _generationPosition = 0;
+    }
     return Stream.periodic(const Duration(milliseconds: 20))
         .map((e) {
           if (generationId != _lastGenerationAt) {
             throw Exception('stopped due to generationId changed');
           }
-          generationState = _getTextGenerationState();
-          final content = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
+          _updateTextGenerationState();
+          final resp = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
             _handlerPtr,
           );
-          final length = content.length;
-          final bytes = content.content.cast<ffi.Uint8>().asTypedList(length);
+          if (resp.length == 0) {
+            return '';
+          }
+          final bytes = resp.content
+              .cast<ffi.Uint8>()
+              .asTypedList(resp.length)
+              .sublist(_generationPosition);
+
+          if (!generationParam.returnWholeGeneratedResult) {
+            _generationPosition = resp.length;
+          }
           return _utf8codec.decode(bytes);
         })
-        .takeWhile((_) => generationState.isGenerating);
+        .takeWhile((_) => generationState.isGenerating)
+        .where((e) => e != '');
   }
 
   void _checkGenerateState() {
@@ -354,7 +327,7 @@ class RWKVRuntime implements RWKV {
     }
   }
 
-  TextGenerationState _getTextGenerationState() {
+  TextGenerationState _updateTextGenerationState() {
     final prefillSpeed = _rwkv.rwkvmobile_runtime_get_avg_prefill_speed(
       _handlerPtr,
     );
@@ -366,12 +339,18 @@ class RWKVRuntime implements RWKV {
     );
     final isGenerating =
         _rwkv.rwkvmobile_runtime_is_generating(_handlerPtr) != 0;
-    return TextGenerationState(
+    final state = TextGenerationState(
       isGenerating: isGenerating,
       prefillProgress: prefillProgress,
       prefillSpeed: prefillSpeed,
       decodeSpeed: decodeSpeed,
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
+
+    if (!state.equals(generationState)) {
+      _controllerGenerationState.add(state);
+    }
+    generationState = state;
+    return state;
   }
 }

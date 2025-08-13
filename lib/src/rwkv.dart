@@ -1,6 +1,6 @@
 import 'dart:ffi';
 
-import 'package:rwkv_flutter/src/runtime.dart';
+import 'package:rwkv_flutter/src/backend.dart';
 import 'package:rwkv_flutter/src/rwkv_mobile_ffi.dart';
 
 import 'isolate.dart';
@@ -58,16 +58,16 @@ class InitParam {
   InitParam({
     this.dynamicLibDir,
     this.logLevel = RWKVLogLevel.debug,
-    this.initBackend = true,
+    this.initBackend = false,
   });
 }
 
-class InitRuntimeParam {
+class InitBackendParam {
   final String modelPath;
   final String tokenizerPath;
   final Backend backend;
 
-  InitRuntimeParam({
+  InitBackendParam({
     required this.modelPath,
     required this.tokenizerPath,
     required this.backend,
@@ -155,6 +155,7 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
   final int completionStopToken;
   final String thinkingToken;
   final String prompt;
+  final bool returnWholeGeneratedResult;
 
   GenerationParam({
     required this.maxTokens,
@@ -162,6 +163,7 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
     required this.chatReasoning,
     required this.completionStopToken,
     required this.prompt,
+    required this.returnWholeGeneratedResult,
   });
 
   factory GenerationParam.initial() {
@@ -171,6 +173,7 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
       chatReasoning: false,
       completionStopToken: 0,
       prompt: GenerationParam.promptThinking,
+      returnWholeGeneratedResult: false,
     );
   }
 
@@ -180,6 +183,7 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
     String? thinkingToken,
     int? completionStopToken,
     String? prompt,
+    bool? returnWholeGeneratedResult,
   }) {
     return GenerationParam(
       maxTokens: maxTokens ?? this.maxTokens,
@@ -187,6 +191,8 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
       chatReasoning: chatReasoning ?? this.chatReasoning,
       completionStopToken: completionStopToken ?? this.completionStopToken,
       prompt: prompt ?? this.prompt,
+      returnWholeGeneratedResult:
+          returnWholeGeneratedResult ?? this.returnWholeGeneratedResult,
     );
   }
 }
@@ -231,6 +237,21 @@ class TextGenerationState {
       timestamp: timestamp ?? this.timestamp,
     );
   }
+
+  bool equals(Object? other) {
+    if (other is TextGenerationState) {
+      return isGenerating == other.isGenerating &&
+          prefillProgress == other.prefillProgress &&
+          prefillSpeed == other.prefillSpeed &&
+          decodeSpeed == other.decodeSpeed;
+    }
+    return false;
+  }
+
+  @override
+  String toString() {
+    return 'TextGenerationState(isGenerating: $isGenerating, prefillProgress: $prefillProgress, prefillSpeed: $prefillSpeed, decodeSpeed: $decodeSpeed, timestamp: $timestamp)';
+  }
 }
 
 class SimilarityParam {
@@ -242,7 +263,7 @@ class SimilarityParam {
 
 abstract class RWKV {
   /// Create a RWKV ffi instance.
-  factory RWKV.create() => RWKVRuntime();
+  factory RWKV.create() => RWKVBackend();
 
   /// Create a RWKV instance run in the isolate.
   factory RWKV.isolated() => RWKVIsolateProxy();
@@ -253,13 +274,7 @@ abstract class RWKV {
   Future init(InitParam param);
 
   /// Initialize the RWKV backend runtime, load and initialize the model.
-  Future initRuntime(InitRuntimeParam param);
-
-  Future loadEmbeddingModel(String path);
-
-  Future<List<List<num>>> getEmbeddings(List<String> text);
-
-  Future<num> similarity(SimilarityParam param);
+  Future initBackend(InitBackendParam param);
 
   Future setSamplerParam(SamplerParam param);
 
@@ -271,6 +286,8 @@ abstract class RWKV {
 
   Future<TextGenerationState> getGenerationState();
 
+  Stream<TextGenerationState> generationStateChangeStream();
+
   Future setGenerationParam(GenerationParam param);
 
   Future setImage(String path);
@@ -280,5 +297,5 @@ abstract class RWKV {
   /// Clear the backend runtime state.
   Future clearState();
 
-  Future stop();
+  Future stopGeneration();
 }
