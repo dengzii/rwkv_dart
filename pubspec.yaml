@@ -1,8 +1,12 @@
-name: rwkv_flutter
-description: "A new Flutter project."
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
-
-version: 1.0.0+1
+name: rwkv_dart
+description: "use rwkv models in dart"
+publish_to: https://pub.dev
+repository: https://github.com/dengzii/rwkv_dart
+issue_tracker: https://github.com/dengzii/rwkv_dart/issues
+version: 1.0.0
+topics:
+  - rwkv
+  - llm
 
 environment:
   sdk: ^3.8.0

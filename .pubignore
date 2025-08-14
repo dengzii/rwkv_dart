@@ -1,0 +1,8 @@
+build
+.idea
+.dart_tool
+/test/
+web
+macos
+linux
+ios

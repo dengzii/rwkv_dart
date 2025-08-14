@@ -1,7 +1,7 @@
 import 'dart:ffi';
 
-import 'package:rwkv_flutter/src/backend.dart';
-import 'package:rwkv_flutter/src/rwkv_mobile_ffi.dart';
+import 'package:rwkv_dart/src/backend.dart';
+import 'package:rwkv_dart/src/rwkv_mobile_ffi.dart';
 
 import 'isolate.dart';
 
@@ -271,7 +271,7 @@ abstract class RWKV {
   /// Initialize the RWKV ffi instance.
   ///
   /// This method should be called before any other methods.
-  Future init(InitParam param);
+  Future init([InitParam? param]);
 
   /// Initialize the RWKV backend runtime, load and initialize the model.
   Future initBackend(InitBackendParam param);

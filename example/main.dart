@@ -1,17 +1,3 @@
-# rwkv dart
-
-让你方便快速地在各个平台使用 dart 运行 rwkv 模型，基本无第三方依赖.
-
-### 准备工作
-
-- 请在 [这里](https://github.com/dengzii/rwkv_dart/releases/) 提前下载好所需平台的动态库和词表文件.
-- 如果你是在纯 dart 中使用, 请在初始化的时候指定 `dynamicLibDir` 参数, 传入对应平台动态库所在的目录路径.
-- 如果你想在 `flutter` 中使用, 下载你需要的对应平台的动态库, 并放置到你的 `flutter` 项目中对应平台动态库的目录.
-- 在 huggingface 等平台下载你想使用的推理后端对应的模型文件.
-
-### Example:
-
-```dart
 import 'package:rwkv_dart/rwkv_dart.dart';
 
 void main() async {
@@ -35,7 +21,7 @@ void main() async {
   var stream = rwkv.chat(['Who are you?']).asBroadcastStream();
   String resp = "";
   stream.listen(
-        (e) {
+    (e) {
       resp += e;
       print(e);
     },
@@ -48,4 +34,3 @@ void main() async {
     },
   );
 }
-```

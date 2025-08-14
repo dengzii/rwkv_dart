@@ -4,9 +4,9 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
-import 'package:rwkv_flutter/src/logger.dart';
-import 'package:rwkv_flutter/src/rwkv.dart';
-import 'package:rwkv_flutter/src/utils.dart';
+import 'package:rwkv_dart/src/logger.dart';
+import 'package:rwkv_dart/src/rwkv.dart';
+import 'package:rwkv_dart/src/utils.dart';
 
 import 'rwkv_mobile_ffi.dart';
 
@@ -83,13 +83,14 @@ class RWKVBackend implements RWKV {
     throw Exception('Unsupported platform');
   }
 
-  Future init(InitParam param) async {
-    dynamicLibraryDir = param.dynamicLibDir ?? '';
-    logLevel = param.logLevel;
+  Future init([InitParam? param]) async {
+    dynamicLibraryDir = param?.dynamicLibDir ?? '';
+    logLevel = param?.logLevel ?? RWKVLogLevel.error;
+
     _rwkv = rwkv_mobile(_loadDynamicLib());
     _rwkv.rwkvmobile_set_loglevel(logLevel.index);
 
-    if (param.initBackend) {
+    if (param?.initBackend == true) {
       final r = Backend.webRwkv.asArgument.toNativeChar();
       _handlerPtr = _rwkv.rwkvmobile_runtime_init_with_name(r);
     }

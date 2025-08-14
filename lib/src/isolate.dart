@@ -1,8 +1,8 @@
 import 'dart:isolate';
 
-import 'package:rwkv_flutter/src/logger.dart';
-import 'package:rwkv_flutter/src/rwkv.dart';
-import 'package:rwkv_flutter/src/backend.dart';
+import 'package:rwkv_dart/src/logger.dart';
+import 'package:rwkv_dart/src/rwkv.dart';
+import 'package:rwkv_dart/src/backend.dart';
 
 class IsolateMessage {
   final String id;
@@ -63,7 +63,7 @@ class RWKVIsolateProxy implements RWKV {
   late final Stream<IsolateMessage> events;
 
   @override
-  Future init(InitParam param) async {
+  Future init([InitParam? param]) async {
     // init isolate
     ReceivePort receivePort = ReceivePort('rwkv_proxy_receive_port');
     events = receivePort.cast<IsolateMessage>().asBroadcastStream();
@@ -237,7 +237,7 @@ class _IsolatedRWKV implements RWKV {
     }
   }
 
-  Future init(InitParam param) => runtime.init(param);
+  Future init([InitParam? param]) => runtime.init(param);
 
   @override
   Future initBackend(InitBackendParam param) => runtime.initBackend(param);
