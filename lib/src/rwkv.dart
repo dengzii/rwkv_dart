@@ -66,11 +66,13 @@ class InitBackendParam {
   final String modelPath;
   final String tokenizerPath;
   final Backend backend;
+  final String? qnnLibDir;
 
   InitBackendParam({
     required this.modelPath,
     required this.tokenizerPath,
     required this.backend,
+    this.qnnLibDir,
   });
 }
 
@@ -153,9 +155,26 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
   final int maxTokens;
   final bool chatReasoning;
   final int completionStopToken;
-  final String thinkingToken;
+
+  // apply to the start of the prompt
   final String prompt;
+
+  //
+  final String thinkingToken;
+
+  // \x17
+  final String? eosToken;
+
+  // \x16
+  final String? bosToken;
+
+  final List<int> tokenBanned;
+
+  // return whole generated result or only new tokens
   final bool returnWholeGeneratedResult;
+
+  final String userRole;
+  final String assistantRole;
 
   GenerationParam({
     required this.maxTokens,
@@ -164,6 +183,11 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
     required this.completionStopToken,
     required this.prompt,
     required this.returnWholeGeneratedResult,
+    this.tokenBanned = const [],
+    this.assistantRole = "Assistant",
+    this.userRole = "User",
+    this.eosToken,
+    this.bosToken,
   });
 
   factory GenerationParam.initial() {
@@ -280,7 +304,9 @@ abstract class RWKV {
 
   Future setPenaltyParam(PenaltyParam param);
 
-  Future loadState(String path);
+  Future loadInitialState(String path);
+
+  Future clearInitialState();
 
   Stream<String> completion(String prompt);
 
@@ -300,4 +326,6 @@ abstract class RWKV {
   Future clearState();
 
   Future stopGeneration();
+
+  Future release();
 }

@@ -58,8 +58,8 @@ extension __ on ffi.Pointer<ffi.Char> {
 class RWKVBackend implements RWKV {
   late final String dynamicLibraryDir;
   late final RWKVLogLevel logLevel;
-
   late final rwkv_mobile _rwkv;
+
   ffi.Pointer<ffi.Void> _handlerPtr = ffi.nullptr;
   final _utf8codec = Utf8Codec(allowMalformed: true);
   int _lastGenerationAt = 0;
@@ -138,9 +138,10 @@ class RWKVBackend implements RWKV {
         _handlerPtr = _rwkv.rwkvmobile_runtime_init_with_name(backendName);
         break;
       case Backend.qnn:
-        // TODO: better solution for this
-        final tempDir = '';
-
+        final tempDir = param.qnnLibDir;
+        if (tempDir == null) {
+          throw Exception('qnnLibDir is not set');
+        }
         _handlerPtr = _rwkv.rwkvmobile_runtime_init_with_name_extra(
           backendName,
           (tempDir + '/assets/lib/libQnnHtp.so').toNativeVoid(),
@@ -275,6 +276,46 @@ class RWKVBackend implements RWKV {
     );
     _tryThrowErrorRetVal(retVal);
 
+    if (param.eosToken != null) {
+      retVal = _rwkv.rwkvmobile_runtime_set_eos_token(
+        _handlerPtr,
+        param.eosToken!.toNativeChar(),
+      );
+      _tryThrowErrorRetVal(retVal);
+    }
+    if (param.bosToken != null) {
+      retVal = _rwkv.rwkvmobile_runtime_set_bos_token(
+        _handlerPtr,
+        param.bosToken!.toNativeChar(),
+      );
+      _tryThrowErrorRetVal(retVal);
+    }
+
+    if (param.tokenBanned.isNotEmpty) {
+      final ptr = calloc.allocate<ffi.Int>(param.tokenBanned.length);
+      for (var i = 0; i < param.tokenBanned.length; i++) {
+        ptr[i] = param.tokenBanned[i];
+      }
+      retVal = _rwkv.rwkvmobile_runtime_set_token_banned(
+        _handlerPtr,
+        ptr,
+        param.tokenBanned.length,
+      );
+      _tryThrowErrorRetVal(retVal);
+    }
+
+    retVal = _rwkv.rwkvmobile_runtime_set_user_role(
+      _handlerPtr,
+      param.userRole.toNativeChar(),
+    );
+    _tryThrowErrorRetVal(retVal);
+
+    retVal = _rwkv.rwkvmobile_runtime_set_response_role(
+      _handlerPtr,
+      param.assistantRole.toNativeChar(),
+    );
+    _tryThrowErrorRetVal(retVal);
+
     retVal = _rwkv.rwkvmobile_runtime_set_thinking_token(
       _handlerPtr,
       generationParam.thinkingToken.toNativeChar(),
@@ -297,10 +338,20 @@ class RWKVBackend implements RWKV {
 
   @override
   Future stopGeneration() async {
-    final retVal = _rwkv.rwkvmobile_runtime_stop_generation(_handlerPtr);
+    await Future.doWhile(() async {
+      final retVal = _rwkv.rwkvmobile_runtime_stop_generation(_handlerPtr);
+      _tryThrowErrorRetVal(retVal);
+      await Future.delayed(Duration(milliseconds: 50));
+      _updateTextGenerationState();
+      return !generationState.isGenerating;
+    }).timeout(Duration(seconds: 5));
+  }
+
+  @override
+  Future release() async {
+    final retVal = _rwkv.rwkvmobile_runtime_release(_handlerPtr);
     _tryThrowErrorRetVal(retVal);
-    await Future.delayed(Duration(milliseconds: 50));
-    _updateTextGenerationState();
+    _handlerPtr = ffi.nullptr;
   }
 
   Stream<String> _generationResultPolling({bool resume = false}) {
@@ -379,11 +430,16 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future loadState(String path) async {
+  Future loadInitialState(String path) async {
     final retVal = _rwkv.rwkvmobile_runtime_load_initial_state(
       _handlerPtr,
       path.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
+  }
+
+  @override
+  Future clearInitialState() async {
+    _rwkv.rwkvmobile_runtime_clear_initial_state(_handlerPtr);
   }
 }
