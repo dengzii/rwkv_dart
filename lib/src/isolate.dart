@@ -133,6 +133,9 @@ class RWKVIsolateProxy implements RWKV {
       yield message.param;
     }
   }
+
+  @override
+  Future loadState(String path) => _call(loadState, path).first;
 }
 
 class _IsolatedRWKV implements RWKV {
@@ -223,6 +226,7 @@ class _IsolatedRWKV implements RWKV {
       chat,
       clearState,
       completion,
+      loadState,
       setAudio,
       setImage,
       setPenaltyParam,
@@ -277,4 +281,7 @@ class _IsolatedRWKV implements RWKV {
 
   @override
   Future stopGeneration() => runtime.stopGeneration();
+
+  @override
+  Future loadState(String path) => runtime.loadState(path);
 }

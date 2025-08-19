@@ -10,19 +10,40 @@ import 'package:rwkv_dart/src/utils.dart';
 
 import 'rwkv_mobile_ffi.dart';
 
-const RWKV_SUCCESS = 0;
-const RWKV_ERROR_IO = 1 << 0;
-const RWKV_ERROR_INIT = 1 << 1;
-const RWKV_ERROR_EVAL = 1 << 2;
-const RWKV_ERROR_INVALID_PARAMETERS = 1 << 3;
-const RWKV_ERROR_BACKEND = 1 << 4;
-const RWKV_ERROR_MODEL = 1 << 5;
-const RWKV_ERROR_TOKENIZER = 1 << 6;
-const RWKV_ERROR_SAMPLER = 1 << 7;
-const RWKV_ERROR_RUNTIME = 1 << 8;
-const RWKV_ERROR_UNSUPPORTED = 1 << 9;
-const RWKV_ERROR_ALLOC = 1 << 10;
-const RWKV_ERROR_RELEASE = 1 << 11;
+enum ErrorFlag {
+  SUCCESS(0),
+  ERROR_IO(1 << 0),
+  ERROR_INIT(1 << 1),
+  ERROR_EVAL(1 << 2),
+  ERROR_INVALID_PARAMETERS(1 << 3),
+  ERROR_BACKEND(1 << 4),
+  ERROR_MODEL(1 << 5),
+  ERROR_TOKENIZER(1 << 6),
+  ERROR_SAMPLER(1 << 7),
+  ERROR_RUNTIME(1 << 8),
+  ERROR_UNSUPPORTED(1 << 9),
+  ERROR_ALLOC(1 << 10),
+  ERROR_RELEASE(1 << 11);
+
+  final int code;
+
+  const ErrorFlag(this.code);
+
+  static List<ErrorFlag> fromRetVal(int value) {
+    final errors = <ErrorFlag>[];
+    for (var e in values) {
+      if ((value & e.code) != 0) {
+        errors.add(e);
+      }
+    }
+    final code = errors.map((e) => e.code).reduce((a, b) => a | b);
+    // check if all errors are included
+    if (code != value) {
+      return [];
+    }
+    return errors;
+  }
+}
 
 extension _ on String {
   ffi.Pointer<ffi.Char> toNativeChar() => toNativeUtf8().cast<ffi.Char>();
@@ -320,12 +341,14 @@ class RWKVBackend implements RWKV {
   }
 
   void _tryThrowErrorRetVal(int retVal) {
-    if (retVal == RWKV_ERROR_INVALID_PARAMETERS) {
-      throw Exception('invalid param');
+    if (retVal == ErrorFlag.SUCCESS.code) {
+      return;
     }
-    if (retVal != 0) {
+    final errors = ErrorFlag.fromRetVal(retVal);
+    if (errors.isEmpty) {
       throw Exception('non-zero return value: $retVal');
     }
+    throw Exception('runtime error: ${errors.join(' | ')}');
   }
 
   TextGenerationState _updateTextGenerationState() {
@@ -353,5 +376,14 @@ class RWKVBackend implements RWKV {
     }
     generationState = state;
     return state;
+  }
+
+  @override
+  Future loadState(String path) async {
+    final retVal = _rwkv.rwkvmobile_runtime_load_initial_state(
+      _handlerPtr,
+      path.toNativeChar(),
+    );
+    _tryThrowErrorRetVal(retVal);
   }
 }

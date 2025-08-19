@@ -280,6 +280,8 @@ abstract class RWKV {
 
   Future setPenaltyParam(PenaltyParam param);
 
+  Future loadState(String path);
+
   Stream<String> completion(String prompt);
 
   Stream<String> chat(List<String> history);
