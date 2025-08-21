@@ -251,18 +251,14 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future setPenaltyParam(PenaltyParam param) async {
-    _rwkv.rwkvmobile_runtime_set_penalty_params(
-      _handlerPtr,
-      param.toFfiParam(),
-    );
-  }
-
-  @override
-  Future setSamplerParam(SamplerParam param) async {
+  Future setDecodeParam(DecodeParam param) async {
     _rwkv.rwkvmobile_runtime_set_sampler_params(
       _handlerPtr,
-      param.toFfiParam(),
+      param.toNativeSamplerParam(),
+    );
+    _rwkv.rwkvmobile_runtime_set_penalty_params(
+      _handlerPtr,
+      param.toNativePenaltyParam(),
     );
   }
 
@@ -441,5 +437,17 @@ class RWKVBackend implements RWKV {
   @override
   Future clearInitialState() async {
     _rwkv.rwkvmobile_runtime_clear_initial_state(_handlerPtr);
+  }
+
+  @override
+  Future<String> getHtpArch() async {
+    final ptr = _rwkv.rwkvmobile_get_htp_arch();
+    return ptr.toDartString();
+  }
+
+  @override
+  Future<String> getSocName() async {
+    final ptr = _rwkv.rwkvmobile_get_soc_name();
+    return ptr.toDartString();
   }
 }

@@ -97,12 +97,8 @@ class RWKVIsolateProxy implements RWKV {
   Future setImage(String path) => _call(setImage, path).first;
 
   @override
-  Future setPenaltyParam(PenaltyParam param) =>
-      _call(setPenaltyParam, param).first;
-
-  @override
-  Future setSamplerParam(SamplerParam param) =>
-      _call(setSamplerParam, param).first;
+  Future setDecodeParam(DecodeParam param) =>
+      _call(setDecodeParam, param).first;
 
   @override
   Future setGenerationParam(GenerationParam param) =>
@@ -142,6 +138,15 @@ class RWKVIsolateProxy implements RWKV {
 
   @override
   Future release() => _call(release).first;
+
+  @override
+  Future<String> dumpLog() => _call(dumpLog).cast<String>().first;
+
+  @override
+  Future<String> getHtpArch() => _call(getHtpArch).cast<String>().first;
+
+  @override
+  Future<String> getSocName() => _call(getSocName).cast<String>().first;
 }
 
 class _IsolatedRWKV implements RWKV {
@@ -237,8 +242,7 @@ class _IsolatedRWKV implements RWKV {
       loadInitialState,
       setAudio,
       setImage,
-      setPenaltyParam,
-      setSamplerParam,
+      setDecodeParam,
       setGenerationParam,
       getGenerationState,
       generationStateChangeStream,
@@ -270,10 +274,7 @@ class _IsolatedRWKV implements RWKV {
   Future setImage(String path) => runtime.setImage(path);
 
   @override
-  Future setPenaltyParam(PenaltyParam param) => runtime.setPenaltyParam(param);
-
-  @override
-  Future setSamplerParam(SamplerParam param) => runtime.setSamplerParam(param);
+  Future setDecodeParam(DecodeParam param) => runtime.setDecodeParam(param);
 
   @override
   Future setGenerationParam(GenerationParam param) =>
@@ -298,4 +299,13 @@ class _IsolatedRWKV implements RWKV {
 
   @override
   Future release() => runtime.release();
+
+  @override
+  Future<String> dumpLog() => runtime.dumpLog();
+
+  @override
+  Future<String> getHtpArch() => runtime.getHtpArch();
+
+  @override
+  Future<String> getSocName() => runtime.getSocName();
 }

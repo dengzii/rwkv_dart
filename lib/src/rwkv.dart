@@ -16,7 +16,7 @@ enum Backend {
   /// Supports Android, Windows, Linux and macOS (iOS maybe in the future. not used for now)
   llamacpp,
 
-  /// Currently only support iOS and macOS
+  /// Unsupported on Android
   webRwkv,
 
   /// Qualcomm Neural Network
@@ -50,6 +50,7 @@ enum Backend {
   }
 }
 
+/// Param for init rwkv dart sdk
 class InitParam {
   final String? dynamicLibDir;
   final RWKVLogLevel logLevel;
@@ -62,10 +63,13 @@ class InitParam {
   });
 }
 
+/// Param load rwkv model
 class InitBackendParam {
   final String modelPath;
   final String tokenizerPath;
   final Backend backend;
+
+  // if using qnn, this is required
   final String? qnnLibDir;
 
   InitBackendParam({
@@ -76,37 +80,7 @@ class InitBackendParam {
   });
 }
 
-class PenaltyParam {
-  /// 0.0 ~ 2.0
-  final double presencePenalty;
-
-  /// 0.0 ~ 2.0
-  final double frequencyPenalty;
-
-  /// 0.990 ~ 0.999
-  final double penaltyDecay;
-
-  const PenaltyParam({
-    required this.presencePenalty,
-    required this.frequencyPenalty,
-    required this.penaltyDecay,
-  });
-
-  factory PenaltyParam.initial() {
-    return PenaltyParam(
-      presencePenalty: 0.5,
-      frequencyPenalty: 0.5,
-      penaltyDecay: 0.996,
-    );
-  }
-
-  toFfiParam() => Struct.create<penalty_params>()
-    ..presence_penalty = presencePenalty
-    ..frequency_penalty = frequencyPenalty
-    ..presence_penalty = penaltyDecay;
-}
-
-class SamplerParam {
+class DecodeParam {
   /// 0.0~3.0
   final double temperature;
 
@@ -116,20 +90,62 @@ class SamplerParam {
   /// 0.0~1.0
   final double topP;
 
-  SamplerParam({
+  /// 0.0 ~ 2.0
+  final double presencePenalty;
+
+  /// 0.0 ~ 2.0
+  final double frequencyPenalty;
+
+  /// 0.990 ~ 0.999
+  final double penaltyDecay;
+
+  DecodeParam({
     required this.temperature,
     required this.topK,
     required this.topP,
+    required this.presencePenalty,
+    required this.frequencyPenalty,
+    required this.penaltyDecay,
   });
 
-  factory SamplerParam.initial() {
-    return SamplerParam(temperature: 1.0, topK: 1, topP: 0.5);
+  factory DecodeParam.initial() {
+    return DecodeParam(
+      temperature: 1.0,
+      topK: 1,
+      topP: 0.5,
+      presencePenalty: 0.5,
+      frequencyPenalty: 0.5,
+      penaltyDecay: 0.996,
+    );
   }
 
-  toFfiParam() => Struct.create<sampler_params>()
+  toNativeSamplerParam() => Struct.create<sampler_params>()
     ..temperature = temperature
     ..top_k = topK
     ..top_p = topP;
+
+  toNativePenaltyParam() => Struct.create<penalty_params>()
+    ..presence_penalty = presencePenalty
+    ..frequency_penalty = frequencyPenalty
+    ..penalty_decay = penaltyDecay;
+
+  DecodeParam copyWith({
+    double? temperature,
+    int? topK,
+    double? topP,
+    double? presencePenalty,
+    double? frequencyPenalty,
+    double? penaltyDecay,
+  }) {
+    return DecodeParam(
+      temperature: temperature ?? this.temperature,
+      topK: topK ?? this.topK,
+      topP: topP ?? this.topP,
+      presencePenalty: presencePenalty ?? this.presencePenalty,
+      frequencyPenalty: frequencyPenalty ?? this.frequencyPenalty,
+      penaltyDecay: penaltyDecay ?? this.penaltyDecay,
+    );
+  }
 }
 
 class GenerationParam {
@@ -154,6 +170,7 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
 
   final int maxTokens;
   final bool chatReasoning;
+
   final int completionStopToken;
 
   // apply to the start of the prompt
@@ -278,13 +295,6 @@ class TextGenerationState {
   }
 }
 
-class SimilarityParam {
-  final List<num> a;
-  final List<num> b;
-
-  const SimilarityParam({required this.a, required this.b});
-}
-
 abstract class RWKV {
   /// Create a RWKV ffi instance.
   factory RWKV.create() => RWKVBackend();
@@ -300,13 +310,17 @@ abstract class RWKV {
   /// Initialize the RWKV backend runtime, load and initialize the model.
   Future initBackend(InitBackendParam param);
 
-  Future setSamplerParam(SamplerParam param);
-
-  Future setPenaltyParam(PenaltyParam param);
+  Future setDecodeParam(DecodeParam param);
 
   Future loadInitialState(String path);
 
   Future clearInitialState();
+
+  Future<String> getSocName();
+
+  Future<String> getHtpArch();
+
+  Future<String> dumpLog();
 
   Stream<String> completion(String prompt);
 
