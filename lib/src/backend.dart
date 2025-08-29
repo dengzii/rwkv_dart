@@ -64,6 +64,7 @@ class RWKVBackend implements RWKV {
   final _utf8codec = Utf8Codec(allowMalformed: true);
   int _lastGenerationAt = 0;
   int _generationPosition = 0;
+  int _modelId = 0;
 
   GenerationParam generationParam = GenerationParam.initial();
   TextGenerationState generationState = TextGenerationState.initial();
@@ -111,69 +112,52 @@ class RWKVBackend implements RWKV {
     _rwkv = rwkv_mobile(_loadDynamicLib());
     _rwkv.rwkvmobile_set_loglevel(logLevel.index);
 
-    if (param?.initBackend == true) {
-      final r = Backend.webRwkv.asArgument.toNativeChar();
-      _handlerPtr = _rwkv.rwkvmobile_runtime_init_with_name(r);
+    _handlerPtr = _rwkv.rwkvmobile_runtime_init();
+    if (_handlerPtr == ffi.nullptr) {
+      throw Exception('Failed to initialize RWKV backend');
     }
-
     logDebug('ffi initialized');
   }
 
   @override
-  Future initBackend(InitBackendParam param) async {
-    if (_handlerPtr.address != 0) {
-      final retVal = _rwkv.rwkvmobile_runtime_release(_handlerPtr);
-      _tryThrowErrorRetVal(retVal);
-      logDebug('release runtime');
-      _handlerPtr = ffi.nullptr;
-    }
+  Future<int> loadModel(LoadModelParam param) async {
     String modelPath = param.modelPath;
-    final backendName = param.backend.asArgument.toNativeChar();
-    switch (param.backend) {
-      case Backend.ncnn:
-      case Backend.llamacpp:
-      case Backend.webRwkv:
-      case Backend.mnn:
-      case Backend.coreml:
-        _handlerPtr = _rwkv.rwkvmobile_runtime_init_with_name(backendName);
-        break;
-      case Backend.qnn:
-        final tempDir = param.qnnLibDir;
-        if (tempDir == null) {
-          throw Exception('qnnLibDir is not set');
-        }
-        _handlerPtr = _rwkv.rwkvmobile_runtime_init_with_name_extra(
-          backendName,
-          (tempDir + '/assets/lib/libQnnHtp.so').toNativeVoid(),
-        );
-        _rwkv.rwkvmobile_runtime_set_qnn_library_path(
-          _handlerPtr,
-          (tempDir + '/assets/lib/').toNativeChar(),
-        );
-    }
-    if (_handlerPtr.address == 0) {
-      throw Exception('failed to initialize runtime');
-    }
-    var retVal = _rwkv.rwkvmobile_runtime_load_tokenizer(
-      _handlerPtr,
-      param.tokenizerPath.toNativeChar(),
-    );
-
-    _tryThrowErrorRetVal(retVal);
-    logDebug('tokenizer loaded');
-
     if (modelPath.endsWith(".zip")) {
       modelPath = modelPath.substring(0, modelPath.lastIndexOf('.zip'));
       await Utils.unzip(modelPath);
     }
 
-    retVal = _rwkv.rwkvmobile_runtime_load_model(
-      _handlerPtr,
-      modelPath.toNativeChar(),
-    );
+    final backendName = param.backend.asArgument.toNativeChar();
 
-    _tryThrowErrorRetVal(retVal);
+    if (param.backend == Backend.qnn) {
+      final tempDir = param.qnnLibDir;
+      if (tempDir == null) {
+        throw Exception('qnnLibDir is not set');
+      }
+      _rwkv.rwkvmobile_runtime_set_qnn_library_path(
+        _handlerPtr,
+        '$tempDir/assets/lib/'.toNativeChar(),
+      );
+      _modelId = _rwkv.rwkvmobile_runtime_load_model_with_extra(
+        _handlerPtr,
+        modelPath.toNativeChar(),
+        backendName,
+        param.tokenizerPath.toNativeChar(),
+        '$tempDir/assets/lib/libQnnHtp.so'.toNativeVoid(),
+      );
+    } else {
+      _modelId = _rwkv.rwkvmobile_runtime_load_model(
+        _handlerPtr,
+        modelPath.toNativeChar(),
+        backendName,
+        param.tokenizerPath.toNativeChar(),
+      );
+    }
+    if (_modelId < 0) {
+      throw Exception('Failed to load model');
+    }
     logDebug('model loaded');
+    return _modelId;
   }
 
   Future<String> dumpLog() async {
@@ -196,6 +180,7 @@ class RWKVBackend implements RWKV {
 
     final retVal = _rwkv.rwkvmobile_runtime_eval_chat_with_history_async(
       _handlerPtr,
+      _modelId,
       inputsPtr,
       numInputs,
       generationParam.maxTokens,
@@ -210,7 +195,7 @@ class RWKVBackend implements RWKV {
 
   @override
   Future clearState() async {
-    final retVal = _rwkv.rwkvmobile_runtime_clear_state(_handlerPtr);
+    final retVal = _rwkv.rwkvmobile_runtime_clear_state(_handlerPtr, _modelId);
     _tryThrowErrorRetVal(retVal);
   }
 
@@ -222,6 +207,7 @@ class RWKVBackend implements RWKV {
 
     final retVal = _rwkv.rwkvmobile_runtime_gen_completion_async(
       _handlerPtr,
+      _modelId,
       prompt.toNativeChar(),
       generationParam.maxTokens,
       generationParam.completionStopToken,
@@ -236,6 +222,7 @@ class RWKVBackend implements RWKV {
   Future setAudio(String path) async {
     final retVal = _rwkv.rwkvmobile_runtime_set_audio_prompt(
       _handlerPtr,
+      _modelId,
       path.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
@@ -245,6 +232,7 @@ class RWKVBackend implements RWKV {
   Future setImage(String path) async {
     final retVal = _rwkv.rwkvmobile_runtime_set_image_prompt(
       _handlerPtr,
+      _modelId,
       path.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
@@ -254,10 +242,12 @@ class RWKVBackend implements RWKV {
   Future setDecodeParam(DecodeParam param) async {
     _rwkv.rwkvmobile_runtime_set_sampler_params(
       _handlerPtr,
+      _modelId,
       param.toNativeSamplerParam(),
     );
     _rwkv.rwkvmobile_runtime_set_penalty_params(
       _handlerPtr,
+      _modelId,
       param.toNativePenaltyParam(),
     );
   }
@@ -268,6 +258,7 @@ class RWKVBackend implements RWKV {
 
     int retVal = _rwkv.rwkvmobile_runtime_set_prompt(
       _handlerPtr,
+      _modelId,
       generationParam.prompt.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
@@ -275,6 +266,7 @@ class RWKVBackend implements RWKV {
     if (param.eosToken != null) {
       retVal = _rwkv.rwkvmobile_runtime_set_eos_token(
         _handlerPtr,
+        _modelId,
         param.eosToken!.toNativeChar(),
       );
       _tryThrowErrorRetVal(retVal);
@@ -282,6 +274,7 @@ class RWKVBackend implements RWKV {
     if (param.bosToken != null) {
       retVal = _rwkv.rwkvmobile_runtime_set_bos_token(
         _handlerPtr,
+        _modelId,
         param.bosToken!.toNativeChar(),
       );
       _tryThrowErrorRetVal(retVal);
@@ -294,6 +287,7 @@ class RWKVBackend implements RWKV {
       }
       retVal = _rwkv.rwkvmobile_runtime_set_token_banned(
         _handlerPtr,
+        _modelId,
         ptr,
         param.tokenBanned.length,
       );
@@ -302,18 +296,21 @@ class RWKVBackend implements RWKV {
 
     retVal = _rwkv.rwkvmobile_runtime_set_user_role(
       _handlerPtr,
+      _modelId,
       param.userRole.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
 
     retVal = _rwkv.rwkvmobile_runtime_set_response_role(
       _handlerPtr,
+      _modelId,
       param.assistantRole.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
 
     retVal = _rwkv.rwkvmobile_runtime_set_thinking_token(
       _handlerPtr,
+      _modelId,
       generationParam.thinkingToken.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
@@ -335,7 +332,10 @@ class RWKVBackend implements RWKV {
   @override
   Future stopGeneration() async {
     await Future.doWhile(() async {
-      final retVal = _rwkv.rwkvmobile_runtime_stop_generation(_handlerPtr);
+      final retVal = _rwkv.rwkvmobile_runtime_stop_generation(
+        _handlerPtr,
+        _modelId,
+      );
       _tryThrowErrorRetVal(retVal);
       await Future.delayed(Duration(milliseconds: 50));
       _updateTextGenerationState();
@@ -363,6 +363,7 @@ class RWKVBackend implements RWKV {
           _updateTextGenerationState();
           final resp = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
             _handlerPtr,
+            _modelId,
           );
           if (resp.length == 0) {
             return '';
@@ -382,7 +383,7 @@ class RWKVBackend implements RWKV {
   }
 
   void _checkGenerateState() {
-    if (_rwkv.rwkvmobile_runtime_is_generating(_handlerPtr) != 0) {
+    if (_rwkv.rwkvmobile_runtime_is_generating(_handlerPtr, _modelId) != 0) {
       throw Exception('LLM is already generating');
     }
   }
@@ -401,15 +402,18 @@ class RWKVBackend implements RWKV {
   TextGenerationState _updateTextGenerationState() {
     final prefillSpeed = _rwkv.rwkvmobile_runtime_get_avg_prefill_speed(
       _handlerPtr,
+      _modelId,
     );
     final decodeSpeed = _rwkv.rwkvmobile_runtime_get_avg_decode_speed(
       _handlerPtr,
+      _modelId,
     );
     final prefillProgress = _rwkv.rwkvmobile_runtime_get_prefill_progress(
       _handlerPtr,
+      _modelId,
     );
     final isGenerating =
-        _rwkv.rwkvmobile_runtime_is_generating(_handlerPtr) != 0;
+        _rwkv.rwkvmobile_runtime_is_generating(_handlerPtr, _modelId) != 0;
     final state = TextGenerationState(
       isGenerating: isGenerating,
       prefillProgress: prefillProgress,
@@ -429,6 +433,7 @@ class RWKVBackend implements RWKV {
   Future loadInitialState(String path) async {
     final retVal = _rwkv.rwkvmobile_runtime_load_initial_state(
       _handlerPtr,
+      _modelId,
       path.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
@@ -436,7 +441,7 @@ class RWKVBackend implements RWKV {
 
   @override
   Future clearInitialState() async {
-    _rwkv.rwkvmobile_runtime_clear_initial_state(_handlerPtr);
+    _rwkv.rwkvmobile_runtime_clear_initial_state(_handlerPtr, _modelId);
   }
 
   @override

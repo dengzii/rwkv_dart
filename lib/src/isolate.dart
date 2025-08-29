@@ -77,7 +77,8 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
-  Future initBackend(InitBackendParam param) => _call(initBackend, param).first;
+  Future<int> loadModel(LoadModelParam param) =>
+      _call(loadModel, param).cast<int>().first;
 
   @override
   Stream<String> chat(List<String> history) =>
@@ -233,7 +234,7 @@ class _IsolatedRWKV implements RWKV {
   void _initHandler() {
     final methods = {
       init,
-      initBackend,
+      loadModel,
       chat,
       clearState,
       completion,
@@ -256,7 +257,7 @@ class _IsolatedRWKV implements RWKV {
   Future init([InitParam? param]) => runtime.init(param);
 
   @override
-  Future initBackend(InitBackendParam param) => runtime.initBackend(param);
+  Future<int> loadModel(LoadModelParam param) => runtime.loadModel(param);
 
   @override
   Stream<String> chat(List<String> history) => runtime.chat(history);

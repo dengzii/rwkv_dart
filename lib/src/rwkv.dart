@@ -54,17 +54,12 @@ enum Backend {
 class InitParam {
   final String? dynamicLibDir;
   final RWKVLogLevel logLevel;
-  final bool initBackend;
 
-  InitParam({
-    this.dynamicLibDir,
-    this.logLevel = RWKVLogLevel.debug,
-    this.initBackend = false,
-  });
+  InitParam({this.dynamicLibDir, this.logLevel = RWKVLogLevel.debug});
 }
 
 /// Param load rwkv model
-class InitBackendParam {
+class LoadModelParam {
   final String modelPath;
   final String tokenizerPath;
   final Backend backend;
@@ -72,7 +67,7 @@ class InitBackendParam {
   // if using qnn, this is required
   final String? qnnLibDir;
 
-  InitBackendParam({
+  LoadModelParam({
     required this.modelPath,
     required this.tokenizerPath,
     required this.backend,
@@ -307,12 +302,12 @@ abstract class RWKV {
   /// This method should be called before any other methods.
   Future init([InitParam? param]);
 
-  /// Initialize the RWKV backend runtime, load and initialize the model.
-  Future initBackend(InitBackendParam param);
+  /// Load and initialize the model, return the model id.
+  Future<int> loadModel(LoadModelParam param);
 
   Future setDecodeParam(DecodeParam param);
 
-  Future loadInitialState(String path);
+  Future loadInitialState(String statePath);
 
   Future clearInitialState();
 
