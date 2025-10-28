@@ -1,5 +1,5 @@
 name: rwkv_dart
-description: "use rwkv models in dart"
+description: "rwkv llm dart sdk"
 publish_to: https://pub.dev
 repository: https://github.com/dengzii/rwkv_dart
 issue_tracker: https://github.com/dengzii/rwkv_dart/issues

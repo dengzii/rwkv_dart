@@ -88,8 +88,8 @@ class RWKVIsolateProxy implements RWKV {
   Future clearState() => _call(clearState).first;
 
   @override
-  Stream<String> completion(String prompt) =>
-      _call(completion, prompt).cast<String>();
+  Stream<String> generate(String prompt) =>
+      _call(generate, prompt).cast<String>();
 
   @override
   Future setAudio(String path) => _call(setAudio, path).first;
@@ -102,16 +102,16 @@ class RWKVIsolateProxy implements RWKV {
       _call(setDecodeParam, param).first;
 
   @override
-  Future setGenerationParam(GenerationParam param) =>
+  Future setGenerationParam(GenerateConfig param) =>
       _call(setGenerationParam, param).first;
 
   @override
-  Future<TextGenerationState> getGenerationState() async =>
-      await _call(getGenerationState).first as TextGenerationState;
+  Future<GenerationState> getGenerationState() async =>
+      await _call(getGenerationState).first as GenerationState;
 
   @override
-  Stream<TextGenerationState> generationStateChangeStream() =>
-      _call(generationStateChangeStream).cast<TextGenerationState>();
+  Stream<GenerationState> generationStateChangeStream() =>
+      _call(generationStateChangeStream).cast<GenerationState>();
 
   @override
   Future stopGeneration() => _call(stopGeneration).first;
@@ -133,9 +133,6 @@ class RWKVIsolateProxy implements RWKV {
 
   @override
   Future loadInitialState(String path) => _call(loadInitialState, path).first;
-
-  @override
-  Future clearInitialState() => _call(clearInitialState).first;
 
   @override
   Future release() => _call(release).first;
@@ -207,7 +204,9 @@ class _IsolatedRWKV implements RWKV {
     } else {
       final handler = handlers[method];
       if (handler == null) {
-        throw Exception('😡 Unknown method: $method');
+        throw Exception(
+          '😡 Unknown method: $method, did you register it in _IsolatedRWKV._initHandler?',
+        );
       }
       res = param == null ? handler() : handler(param);
     }
@@ -237,8 +236,7 @@ class _IsolatedRWKV implements RWKV {
       loadModel,
       chat,
       clearState,
-      completion,
-      clearInitialState,
+      generate,
       release,
       loadInitialState,
       setAudio,
@@ -266,7 +264,7 @@ class _IsolatedRWKV implements RWKV {
   Future clearState() => runtime.clearState();
 
   @override
-  Stream<String> completion(String prompt) => runtime.completion(prompt);
+  Stream<String> generate(String prompt) => runtime.generate(prompt);
 
   @override
   Future setAudio(String path) => runtime.setAudio(path);
@@ -278,15 +276,15 @@ class _IsolatedRWKV implements RWKV {
   Future setDecodeParam(DecodeParam param) => runtime.setDecodeParam(param);
 
   @override
-  Future setGenerationParam(GenerationParam param) =>
+  Future setGenerationParam(GenerateConfig param) =>
       runtime.setGenerationParam(param);
 
   @override
-  Future<TextGenerationState> getGenerationState() =>
+  Future<GenerationState> getGenerationState() =>
       runtime.getGenerationState();
 
   @override
-  Stream<TextGenerationState> generationStateChangeStream() =>
+  Stream<GenerationState> generationStateChangeStream() =>
       runtime.generationStateChangeStream();
 
   @override
@@ -294,9 +292,6 @@ class _IsolatedRWKV implements RWKV {
 
   @override
   Future loadInitialState(String path) => runtime.loadInitialState(path);
-
-  @override
-  Future clearInitialState() => runtime.clearInitialState();
 
   @override
   Future release() => runtime.release();

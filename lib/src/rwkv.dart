@@ -8,46 +8,26 @@ import 'isolate.dart';
 enum RWKVLogLevel { debug, info, warning, error }
 
 enum Backend {
-  /// Currently we use it on Android, Windows and Linux
-  /// This is suitable for running small puzzle models on various platforms
-  /// Not really optimal for larger chat models
-  ncnn,
-
-  /// Supports Android, Windows, Linux and macOS (iOS maybe in the future. not used for now)
-  llamacpp,
+  /// Android, Windows and Linux
+  ncnn('ncnn'),
+  llamacpp('llama.cpp'),
 
   /// Unsupported on Android
-  webRwkv,
+  webRwkv('web-rwkv'),
+  qnn('qnn'),
+  mnn('mnn'),
+  coreml('coreml');
 
-  /// Qualcomm Neural Network
-  qnn,
+  final String name;
 
-  /// dummy mnn backend string
-  mnn,
+  const Backend(this.name);
 
-  /// Apple CoreML
-  coreml;
-
-  String get asArgument => switch (this) {
-    Backend.ncnn => 'ncnn',
-    Backend.webRwkv => 'web-rwkv',
-    Backend.llamacpp => 'llama.cpp',
-    Backend.qnn => 'qnn',
-    Backend.mnn => 'mnn',
-    Backend.coreml => 'coreml',
+  static late final _name2backend = {
+    for (final backend in Backend.values) backend.name: backend,
   };
 
-  static Backend fromString(String value) {
-    final toLower = value.toLowerCase();
-    if (toLower.contains('ncnn')) return Backend.ncnn;
-    if (toLower.contains('web') && toLower.contains('rwkv'))
-      return Backend.webRwkv;
-    if (toLower.contains('llama')) return Backend.llamacpp;
-    if (toLower.contains('qnn')) return Backend.qnn;
-    if (toLower.contains('mnn')) return Backend.mnn;
-    if (toLower.contains('coreml')) return Backend.coreml;
-    throw Exception('Unknown backend: $value');
-  }
+  static Backend fromString(String value) =>
+      _name2backend[value.toLowerCase()]!;
 }
 
 /// Param for init rwkv dart sdk
@@ -143,25 +123,9 @@ class DecodeParam {
   }
 }
 
-class GenerationParam {
-  static const promptThinking = "<EOD>";
-
-  static const promptNoThinkingEN = """<EOD>User: hi
-
-Assistant: Hi. I am your assistant and I will provide expert full response in full details. Please feel free to ask any question and I will always answer it.
-
-""";
-
-  static const promptNoThinkingCN = """<EOD>User: 你好
-
-Assistant: 你好，我是你的助手，我会提供专家级的完整回答。请随时提问，我会一直回答。
-
-""";
-
+class GenerateConfig {
   static const thinkingTokenNone = "";
-  static const thinkingTokenLight = r"<think>\n</think>";
   static const thinkingTokenFree = r"<think>";
-  static const thinkingTokenZh = r"<think>嗯";
 
   final int maxTokens;
   final bool chatReasoning;
@@ -188,7 +152,7 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
   final String userRole;
   final String assistantRole;
 
-  GenerationParam({
+  GenerateConfig({
     required this.maxTokens,
     required this.thinkingToken,
     required this.chatReasoning,
@@ -202,18 +166,18 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
     this.bosToken,
   });
 
-  factory GenerationParam.initial() {
-    return GenerationParam(
+  factory GenerateConfig.initial() {
+    return GenerateConfig(
       maxTokens: 2000,
       thinkingToken: thinkingTokenNone,
       chatReasoning: false,
       completionStopToken: 0,
-      prompt: GenerationParam.promptThinking,
+      prompt: "",
       returnWholeGeneratedResult: false,
     );
   }
 
-  GenerationParam copyWith({
+  GenerateConfig copyWith({
     int? maxTokens,
     bool? chatReasoning,
     String? thinkingToken,
@@ -221,7 +185,7 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
     String? prompt,
     bool? returnWholeGeneratedResult,
   }) {
-    return GenerationParam(
+    return GenerateConfig(
       maxTokens: maxTokens ?? this.maxTokens,
       thinkingToken: thinkingToken ?? this.thinkingToken,
       chatReasoning: chatReasoning ?? this.chatReasoning,
@@ -233,14 +197,14 @@ Assistant: 你好，我是你的助手，我会提供专家级的完整回答。
   }
 }
 
-class TextGenerationState {
+class GenerationState {
   final bool isGenerating;
   final double prefillProgress;
   final double prefillSpeed;
   final double decodeSpeed;
   final int timestamp;
 
-  TextGenerationState({
+  GenerationState({
     required this.isGenerating,
     required this.prefillProgress,
     required this.prefillSpeed,
@@ -248,8 +212,8 @@ class TextGenerationState {
     required this.timestamp,
   });
 
-  factory TextGenerationState.initial() {
-    return TextGenerationState(
+  factory GenerationState.initial() {
+    return GenerationState(
       isGenerating: false,
       prefillProgress: 0,
       prefillSpeed: 0,
@@ -258,14 +222,14 @@ class TextGenerationState {
     );
   }
 
-  TextGenerationState copyWith({
+  GenerationState copyWith({
     bool? isGenerating,
     double? prefillProgress,
     double? prefillSpeed,
     double? decodeSpeed,
     int? timestamp,
   }) {
-    return TextGenerationState(
+    return GenerationState(
       isGenerating: isGenerating ?? this.isGenerating,
       prefillProgress: prefillProgress ?? this.prefillProgress,
       prefillSpeed: prefillSpeed ?? this.prefillSpeed,
@@ -275,7 +239,7 @@ class TextGenerationState {
   }
 
   bool equals(Object? other) {
-    if (other is TextGenerationState) {
+    if (other is GenerationState) {
       return isGenerating == other.isGenerating &&
           prefillProgress == other.prefillProgress &&
           prefillSpeed == other.prefillSpeed &&
@@ -309,23 +273,21 @@ abstract class RWKV {
 
   Future loadInitialState(String statePath);
 
-  Future clearInitialState();
-
   Future<String> getSocName();
 
   Future<String> getHtpArch();
 
   Future<String> dumpLog();
 
-  Stream<String> completion(String prompt);
+  Stream<String> generate(String prompt);
 
   Stream<String> chat(List<String> history);
 
-  Future<TextGenerationState> getGenerationState();
+  Future<GenerationState> getGenerationState();
 
-  Stream<TextGenerationState> generationStateChangeStream();
+  Stream<GenerationState> generationStateChangeStream();
 
-  Future setGenerationParam(GenerationParam param);
+  Future setGenerationParam(GenerateConfig param);
 
   Future setImage(String path);
 

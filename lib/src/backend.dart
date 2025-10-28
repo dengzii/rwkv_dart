@@ -66,9 +66,9 @@ class RWKVBackend implements RWKV {
   int _generationPosition = 0;
   int _modelId = 0;
 
-  GenerationParam generationParam = GenerationParam.initial();
-  TextGenerationState generationState = TextGenerationState.initial();
-  StreamController<TextGenerationState> _controllerGenerationState =
+  GenerateConfig generationParam = GenerateConfig.initial();
+  GenerationState generationState = GenerationState.initial();
+  StreamController<GenerationState> _controllerGenerationState =
       StreamController.broadcast();
 
   RWKVBackend();
@@ -127,7 +127,7 @@ class RWKVBackend implements RWKV {
       await Utils.unzip(modelPath);
     }
 
-    final backendName = param.backend.asArgument.toNativeChar();
+    final backendName = param.backend.name.toNativeChar();
 
     if (param.backend == Backend.qnn) {
       final tempDir = param.qnnLibDir;
@@ -200,7 +200,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<String> completion(String prompt) {
+  Stream<String> generate(String prompt) {
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
 
     _checkGenerateState();
@@ -230,12 +230,7 @@ class RWKVBackend implements RWKV {
 
   @override
   Future setImage(String path) async {
-    final retVal = _rwkv.rwkvmobile_runtime_set_image_prompt(
-      _handlerPtr,
-      _modelId,
-      path.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
+    throw Exception('Not implemented');
   }
 
   @override
@@ -253,7 +248,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future setGenerationParam(GenerationParam param) async {
+  Future setGenerationParam(GenerateConfig param) async {
     this.generationParam = param;
 
     int retVal = _rwkv.rwkvmobile_runtime_set_prompt(
@@ -317,11 +312,11 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<TextGenerationState> generationStateChangeStream() =>
+  Stream<GenerationState> generationStateChangeStream() =>
       _controllerGenerationState.stream;
 
   @override
-  Future<TextGenerationState> getGenerationState() async {
+  Future<GenerationState> getGenerationState() async {
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - generationState.timestamp > 100) {
       _updateTextGenerationState();
@@ -399,7 +394,7 @@ class RWKVBackend implements RWKV {
     throw Exception('runtime error: ${errors.join(' | ')}');
   }
 
-  TextGenerationState _updateTextGenerationState() {
+  GenerationState _updateTextGenerationState() {
     final prefillSpeed = _rwkv.rwkvmobile_runtime_get_avg_prefill_speed(
       _handlerPtr,
       _modelId,
@@ -414,7 +409,7 @@ class RWKVBackend implements RWKV {
     );
     final isGenerating =
         _rwkv.rwkvmobile_runtime_is_generating(_handlerPtr, _modelId) != 0;
-    final state = TextGenerationState(
+    final state = GenerationState(
       isGenerating: isGenerating,
       prefillProgress: prefillProgress,
       prefillSpeed: prefillSpeed,
@@ -437,11 +432,6 @@ class RWKVBackend implements RWKV {
       path.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
-  }
-
-  @override
-  Future clearInitialState() async {
-    _rwkv.rwkvmobile_runtime_clear_initial_state(_handlerPtr, _modelId);
   }
 
   @override
