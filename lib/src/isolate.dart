@@ -70,7 +70,7 @@ class RWKVIsolateProxy implements RWKV {
     await _IsolatedRWKV.spawn(receivePort.sendPort);
     final initMessage = await events.firstWhere((e) => e.isInitialMessage);
     sendPort = initMessage.param as SendPort;
-    logDebug('isolate init done');
+    logd('isolate init done');
 
     // init runtime
     await _call(init, param).first;
@@ -102,19 +102,19 @@ class RWKVIsolateProxy implements RWKV {
       _call(setDecodeParam, param).first;
 
   @override
-  Future setGenerationParam(GenerateConfig param) =>
-      _call(setGenerationParam, param).first;
+  Future setGenerateConfig(GenerateConfig param) =>
+      _call(setGenerateConfig, param).first;
 
   @override
-  Future<GenerationState> getGenerationState() async =>
-      await _call(getGenerationState).first as GenerationState;
+  Future<GenerateState> getGenerateState() async =>
+      await _call(getGenerateState).first as GenerateState;
 
   @override
-  Stream<GenerationState> generationStateChangeStream() =>
-      _call(generationStateChangeStream).cast<GenerationState>();
+  Stream<GenerateState> generatingStateStream() =>
+      _call(generatingStateStream).cast<GenerateState>();
 
   @override
-  Future stopGeneration() => _call(stopGeneration).first;
+  Future stopGenerate() => _call(stopGenerate).first;
 
   Stream _call(Function method, [dynamic param]) async* {
     final message = IsolateMessage.fromFunc(method, param);
@@ -179,15 +179,15 @@ class _IsolatedRWKV implements RWKV {
               'MethodInvocationError: method:${message.method}, param:${message.param}.';
           sendPort.send(message.copyWith(error: msg));
         } catch (e, s) {
-          logError(s);
+          loge(s);
           sendPort.send(message.copyWith(error: e.toString()));
         }
       },
       onError: (e) {
-        logError(e);
+        loge(e);
       },
       onDone: () {
-        logDebug('rwkv isolate receive port done');
+        logd('rwkv isolate receive port done');
       },
     );
   }
@@ -242,10 +242,10 @@ class _IsolatedRWKV implements RWKV {
       setAudio,
       setImage,
       setDecodeParam,
-      setGenerationParam,
-      getGenerationState,
-      generationStateChangeStream,
-      stopGeneration,
+      setGenerateConfig,
+      getGenerateState,
+      generatingStateStream,
+      stopGenerate,
     };
     for (final method in methods) {
       handlers[method.toString()] = method;
@@ -276,19 +276,19 @@ class _IsolatedRWKV implements RWKV {
   Future setDecodeParam(DecodeParam param) => runtime.setDecodeParam(param);
 
   @override
-  Future setGenerationParam(GenerateConfig param) =>
-      runtime.setGenerationParam(param);
+  Future setGenerateConfig(GenerateConfig param) =>
+      runtime.setGenerateConfig(param);
 
   @override
-  Future<GenerationState> getGenerationState() =>
-      runtime.getGenerationState();
+  Future<GenerateState> getGenerateState() =>
+      runtime.getGenerateState();
 
   @override
-  Stream<GenerationState> generationStateChangeStream() =>
-      runtime.generationStateChangeStream();
+  Stream<GenerateState> generatingStateStream() =>
+      runtime.generatingStateStream();
 
   @override
-  Future stopGeneration() => runtime.stopGeneration();
+  Future stopGenerate() => runtime.stopGenerate();
 
   @override
   Future loadInitialState(String path) => runtime.loadInitialState(path);

@@ -4,6 +4,7 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:logging/logging.dart';
 import 'package:rwkv_dart/src/logger.dart';
 import 'package:rwkv_dart/src/rwkv.dart';
 import 'package:rwkv_dart/src/utils.dart';
@@ -67,8 +68,8 @@ class RWKVBackend implements RWKV {
   int _modelId = 0;
 
   GenerateConfig generationParam = GenerateConfig.initial();
-  GenerationState generationState = GenerationState.initial();
-  StreamController<GenerationState> _controllerGenerationState =
+  GenerateState generationState = GenerateState.initial();
+  StreamController<GenerateState> _controllerGenerationState =
       StreamController.broadcast();
 
   RWKVBackend();
@@ -108,6 +109,15 @@ class RWKVBackend implements RWKV {
   Future init([InitParam? param]) async {
     dynamicLibraryDir = param?.dynamicLibDir ?? '';
     logLevel = param?.logLevel ?? RWKVLogLevel.error;
+    setLogLevel(
+      {
+        RWKVLogLevel.verbose: Level.ALL,
+        RWKVLogLevel.info: Level.CONFIG,
+        RWKVLogLevel.debug: Level.INFO,
+        RWKVLogLevel.warning: Level.WARNING,
+        RWKVLogLevel.error: Level.SEVERE,
+      }[logLevel]!,
+    );
 
     _rwkv = rwkv_mobile(_loadDynamicLib());
     _rwkv.rwkvmobile_set_loglevel(logLevel.index);
@@ -116,7 +126,7 @@ class RWKVBackend implements RWKV {
     if (_handlerPtr == ffi.nullptr) {
       throw Exception('Failed to initialize RWKV backend');
     }
-    logDebug('ffi initialized');
+    logd('ffi initialized');
   }
 
   @override
@@ -156,7 +166,7 @@ class RWKVBackend implements RWKV {
     if (_modelId < 0) {
       throw Exception('Failed to load model');
     }
-    logDebug('model loaded');
+    logd('model loaded');
     return _modelId;
   }
 
@@ -248,7 +258,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future setGenerationParam(GenerateConfig param) async {
+  Future setGenerateConfig(GenerateConfig param) async {
     this.generationParam = param;
 
     int retVal = _rwkv.rwkvmobile_runtime_set_prompt(
@@ -312,11 +322,11 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<GenerationState> generationStateChangeStream() =>
+  Stream<GenerateState> generatingStateStream() =>
       _controllerGenerationState.stream;
 
   @override
-  Future<GenerationState> getGenerationState() async {
+  Future<GenerateState> getGenerateState() async {
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - generationState.timestamp > 100) {
       _updateTextGenerationState();
@@ -325,7 +335,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future stopGeneration() async {
+  Future stopGenerate() async {
     await Future.doWhile(() async {
       final retVal = _rwkv.rwkvmobile_runtime_stop_generation(
         _handlerPtr,
@@ -394,7 +404,7 @@ class RWKVBackend implements RWKV {
     throw Exception('runtime error: ${errors.join(' | ')}');
   }
 
-  GenerationState _updateTextGenerationState() {
+  GenerateState _updateTextGenerationState() {
     final prefillSpeed = _rwkv.rwkvmobile_runtime_get_avg_prefill_speed(
       _handlerPtr,
       _modelId,
@@ -409,7 +419,7 @@ class RWKVBackend implements RWKV {
     );
     final isGenerating =
         _rwkv.rwkvmobile_runtime_is_generating(_handlerPtr, _modelId) != 0;
-    final state = GenerationState(
+    final state = GenerateState(
       isGenerating: isGenerating,
       prefillProgress: prefillProgress,
       prefillSpeed: prefillSpeed,

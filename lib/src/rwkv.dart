@@ -1,11 +1,12 @@
 import 'dart:ffi';
 
+import 'package:logging/logging.dart';
 import 'package:rwkv_dart/src/backend.dart';
 import 'package:rwkv_dart/src/rwkv_mobile_ffi.dart';
 
 import 'isolate.dart';
 
-enum RWKVLogLevel { debug, info, warning, error }
+enum RWKVLogLevel { verbose, info, debug, warning, error }
 
 enum Backend {
   /// Android, Windows and Linux
@@ -197,14 +198,14 @@ class GenerateConfig {
   }
 }
 
-class GenerationState {
+class GenerateState {
   final bool isGenerating;
   final double prefillProgress;
   final double prefillSpeed;
   final double decodeSpeed;
   final int timestamp;
 
-  GenerationState({
+  GenerateState({
     required this.isGenerating,
     required this.prefillProgress,
     required this.prefillSpeed,
@@ -212,8 +213,8 @@ class GenerationState {
     required this.timestamp,
   });
 
-  factory GenerationState.initial() {
-    return GenerationState(
+  factory GenerateState.initial() {
+    return GenerateState(
       isGenerating: false,
       prefillProgress: 0,
       prefillSpeed: 0,
@@ -222,14 +223,14 @@ class GenerationState {
     );
   }
 
-  GenerationState copyWith({
+  GenerateState copyWith({
     bool? isGenerating,
     double? prefillProgress,
     double? prefillSpeed,
     double? decodeSpeed,
     int? timestamp,
   }) {
-    return GenerationState(
+    return GenerateState(
       isGenerating: isGenerating ?? this.isGenerating,
       prefillProgress: prefillProgress ?? this.prefillProgress,
       prefillSpeed: prefillSpeed ?? this.prefillSpeed,
@@ -239,7 +240,7 @@ class GenerationState {
   }
 
   bool equals(Object? other) {
-    if (other is GenerationState) {
+    if (other is GenerateState) {
       return isGenerating == other.isGenerating &&
           prefillProgress == other.prefillProgress &&
           prefillSpeed == other.prefillSpeed &&
@@ -250,7 +251,7 @@ class GenerationState {
 
   @override
   String toString() {
-    return 'TextGenerationState(isGenerating: $isGenerating, prefillProgress: $prefillProgress, prefillSpeed: $prefillSpeed, decodeSpeed: $decodeSpeed, timestamp: $timestamp)';
+    return 'GenerateState(isGenerating: $isGenerating, prefillProgress: $prefillProgress, prefillSpeed: $prefillSpeed, decodeSpeed: $decodeSpeed, timestamp: $timestamp)';
   }
 }
 
@@ -283,11 +284,11 @@ abstract class RWKV {
 
   Stream<String> chat(List<String> history);
 
-  Future<GenerationState> getGenerationState();
+  Future<GenerateState> getGenerateState();
 
-  Stream<GenerationState> generationStateChangeStream();
+  Stream<GenerateState> generatingStateStream();
 
-  Future setGenerationParam(GenerateConfig param);
+  Future setGenerateConfig(GenerateConfig param);
 
   Future setImage(String path);
 
@@ -296,7 +297,7 @@ abstract class RWKV {
   /// Clear the backend runtime state.
   Future clearState();
 
-  Future stopGeneration();
+  Future stopGenerate();
 
   Future release();
 }
