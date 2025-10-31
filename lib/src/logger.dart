@@ -10,15 +10,12 @@ void _listenToLogs() {
   }
 
   _loggerInitialized = true;
+  Logger.root.clearListeners();
   Logger.root.onRecord.listen((record) {
     final time =
         '${record.time.hour}:${record.time.minute}:${record.time.second}';
     print('$time\tRWKV/${record.level.name}: ${record.message}');
   });
-}
-
-void setLogLevel(Level level) {
-  Logger.root.level = level;
 }
 
 void logv(dynamic msg) {

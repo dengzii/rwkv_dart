@@ -1,6 +1,5 @@
 import 'dart:ffi';
 
-import 'package:logging/logging.dart';
 import 'package:rwkv_dart/src/backend.dart';
 import 'package:rwkv_dart/src/rwkv_mobile_ffi.dart';
 
@@ -122,6 +121,11 @@ class DecodeParam {
       penaltyDecay: penaltyDecay ?? this.penaltyDecay,
     );
   }
+
+  @override
+  String toString() {
+    return 'DecodeParam{temperature: $temperature, topK: $topK, topP: $topP, presencePenalty: $presencePenalty, frequencyPenalty: $frequencyPenalty, penaltyDecay: $penaltyDecay}';
+  }
 }
 
 class GenerateConfig {
@@ -196,6 +200,11 @@ class GenerateConfig {
           returnWholeGeneratedResult ?? this.returnWholeGeneratedResult,
     );
   }
+
+  @override
+  String toString() {
+    return 'GenerateConfig{maxTokens: $maxTokens, chatReasoning: $chatReasoning, thinkingToken: $thinkingToken, completionStopToken: $completionStopToken, prompt: $prompt, returnWholeGeneratedResult: $returnWholeGeneratedResult}';
+  }
 }
 
 class GenerateState {
@@ -267,6 +276,8 @@ abstract class RWKV {
   /// This method should be called before any other methods.
   Future init([InitParam? param]);
 
+  Future setLogLevel(RWKVLogLevel level);
+
   /// Load and initialize the model, return the model id.
   Future<int> loadModel(LoadModelParam param);
 
@@ -280,6 +291,9 @@ abstract class RWKV {
 
   Future<String> dumpLog();
 
+  /// Generate text from prompt.
+  /// The generated text will be streamed,
+  /// stream will be closed when generation is done.
   Stream<String> generate(String prompt);
 
   Stream<String> chat(List<String> history);
@@ -299,5 +313,6 @@ abstract class RWKV {
 
   Future stopGenerate();
 
+  /// Release all resources, the instance should not be used after this.
   Future release();
 }

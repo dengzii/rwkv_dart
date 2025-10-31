@@ -77,6 +77,9 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
+  Future setLogLevel(RWKVLogLevel level) => _call(setLogLevel, level).first;
+
+  @override
   Future<int> loadModel(LoadModelParam param) =>
       _call(loadModel, param).cast<int>().first;
 
@@ -233,6 +236,7 @@ class _IsolatedRWKV implements RWKV {
   void _initHandler() {
     final methods = {
       init,
+      setLogLevel,
       loadModel,
       chat,
       clearState,
@@ -253,6 +257,9 @@ class _IsolatedRWKV implements RWKV {
   }
 
   Future init([InitParam? param]) => runtime.init(param);
+
+  @override
+  Future setLogLevel(RWKVLogLevel level) => runtime.setLogLevel(level);
 
   @override
   Future<int> loadModel(LoadModelParam param) => runtime.loadModel(param);
@@ -280,8 +287,7 @@ class _IsolatedRWKV implements RWKV {
       runtime.setGenerateConfig(param);
 
   @override
-  Future<GenerateState> getGenerateState() =>
-      runtime.getGenerateState();
+  Future<GenerateState> getGenerateState() => runtime.getGenerateState();
 
   @override
   Stream<GenerateState> generatingStateStream() =>

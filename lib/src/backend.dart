@@ -108,19 +108,10 @@ class RWKVBackend implements RWKV {
 
   Future init([InitParam? param]) async {
     dynamicLibraryDir = param?.dynamicLibDir ?? '';
-    logLevel = param?.logLevel ?? RWKVLogLevel.error;
-    setLogLevel(
-      {
-        RWKVLogLevel.verbose: Level.ALL,
-        RWKVLogLevel.info: Level.CONFIG,
-        RWKVLogLevel.debug: Level.INFO,
-        RWKVLogLevel.warning: Level.WARNING,
-        RWKVLogLevel.error: Level.SEVERE,
-      }[logLevel]!,
-    );
 
     _rwkv = rwkv_mobile(_loadDynamicLib());
-    _rwkv.rwkvmobile_set_loglevel(logLevel.index);
+
+    await setLogLevel(param?.logLevel ?? RWKVLogLevel.error);
 
     _handlerPtr = _rwkv.rwkvmobile_runtime_init();
     if (_handlerPtr == ffi.nullptr) {
@@ -130,11 +121,25 @@ class RWKVBackend implements RWKV {
   }
 
   @override
+  Future setLogLevel(RWKVLogLevel level) async {
+    logLevel = level;
+    Logger.root.level = {
+      RWKVLogLevel.verbose: Level.ALL,
+      RWKVLogLevel.info: Level.CONFIG,
+      RWKVLogLevel.debug: Level.INFO,
+      RWKVLogLevel.warning: Level.WARNING,
+      RWKVLogLevel.error: Level.SEVERE,
+    }[logLevel]!;
+    _rwkv.rwkvmobile_set_loglevel(logLevel.index);
+    logd('log level set to $logLevel');
+  }
+
+  @override
   Future<int> loadModel(LoadModelParam param) async {
     String modelPath = param.modelPath;
     if (modelPath.endsWith(".zip")) {
-      modelPath = modelPath.substring(0, modelPath.lastIndexOf('.zip'));
       await Utils.unzip(modelPath);
+      modelPath = modelPath.substring(0, modelPath.lastIndexOf('.zip'));
     }
 
     final backendName = param.backend.name.toNativeChar();
@@ -166,7 +171,9 @@ class RWKVBackend implements RWKV {
     if (_modelId < 0) {
       throw Exception('Failed to load model');
     }
-    logd('model loaded');
+    logd(
+      'model loaded, ${param.backend.name}, ${param.modelPath}, ${param.tokenizerPath}',
+    );
     return _modelId;
   }
 
@@ -205,14 +212,22 @@ class RWKVBackend implements RWKV {
 
   @override
   Future clearState() async {
+    logd('clear state');
     final retVal = _rwkv.rwkvmobile_runtime_clear_state(_handlerPtr, _modelId);
     _tryThrowErrorRetVal(retVal);
   }
 
   @override
   Stream<String> generate(String prompt) {
-    _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
+    logd(
+      'generate start, '
+      'model_id=${_modelId}, '
+      'prompt_len=${prompt.length}, '
+      'max_len=${generationParam.maxTokens}, '
+      'stop_token=${generationParam.completionStopToken}',
+    );
 
+    _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
     _checkGenerateState();
 
     final retVal = _rwkv.rwkvmobile_runtime_gen_completion_async(
@@ -245,6 +260,7 @@ class RWKVBackend implements RWKV {
 
   @override
   Future setDecodeParam(DecodeParam param) async {
+    logd('set decode param: $param');
     _rwkv.rwkvmobile_runtime_set_sampler_params(
       _handlerPtr,
       _modelId,
@@ -260,6 +276,7 @@ class RWKVBackend implements RWKV {
   @override
   Future setGenerateConfig(GenerateConfig param) async {
     this.generationParam = param;
+    logd('set generate config: $param');
 
     int retVal = _rwkv.rwkvmobile_runtime_set_prompt(
       _handlerPtr,
@@ -336,16 +353,21 @@ class RWKVBackend implements RWKV {
 
   @override
   Future stopGenerate() async {
-    await Future.doWhile(() async {
-      final retVal = _rwkv.rwkvmobile_runtime_stop_generation(
-        _handlerPtr,
-        _modelId,
-      );
-      _tryThrowErrorRetVal(retVal);
-      await Future.delayed(Duration(milliseconds: 50));
-      _updateTextGenerationState();
-      return !generationState.isGenerating;
-    }).timeout(Duration(seconds: 5));
+    try {
+      await Future.doWhile(() async {
+        final retVal = _rwkv.rwkvmobile_runtime_stop_generation(
+          _handlerPtr,
+          _modelId,
+        );
+        _tryThrowErrorRetVal(retVal);
+        await Future.delayed(Duration(milliseconds: 100));
+        _updateTextGenerationState();
+        return generationState.isGenerating;
+      }).timeout(Duration(seconds: 5));
+    } on TimeoutException {
+      loge('stop generate failed');
+    }
+    logd('stop generate done');
   }
 
   @override
@@ -353,6 +375,7 @@ class RWKVBackend implements RWKV {
     final retVal = _rwkv.rwkvmobile_runtime_release(_handlerPtr);
     _tryThrowErrorRetVal(retVal);
     _handlerPtr = ffi.nullptr;
+    _modelId = -1;
   }
 
   Stream<String> _generationResultPolling({bool resume = false}) {
@@ -426,6 +449,10 @@ class RWKVBackend implements RWKV {
       decodeSpeed: decodeSpeed,
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
+
+    if (generationState.isGenerating != state.isGenerating) {
+      logd('generate state changed: ${state.isGenerating}');
+    }
 
     if (!state.equals(generationState)) {
       _controllerGenerationState.add(state);
