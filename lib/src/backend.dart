@@ -482,4 +482,20 @@ class RWKVBackend implements RWKV {
     final ptr = _rwkv.rwkvmobile_get_soc_name();
     return ptr.toDartString();
   }
+
+  @override
+  Future<int> getSeed() async {
+    final retVal = _rwkv.rwkvmobile_runtime_get_seed(_handlerPtr, _modelId);
+    return retVal;
+  }
+
+  @override
+  Future setSeed(int seed) async {
+    final retVal = _rwkv.rwkvmobile_runtime_set_seed(
+      _handlerPtr,
+      _modelId,
+      seed,
+    );
+    _tryThrowErrorRetVal(retVal);
+  }
 }

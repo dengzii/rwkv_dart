@@ -313,6 +313,10 @@ abstract class RWKV {
 
   Future stopGenerate();
 
+  Future<int> getSeed();
+
+  Future setSeed(int seed);
+
   /// Release all resources, the instance should not be used after this.
   Future release();
 }

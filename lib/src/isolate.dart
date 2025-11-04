@@ -148,6 +148,12 @@ class RWKVIsolateProxy implements RWKV {
 
   @override
   Future<String> getSocName() => _call(getSocName).cast<String>().first;
+
+  @override
+  Future<int> getSeed() => _call(getSeed).cast<int>().first;
+
+  @override
+  Future setSeed(int seed) => _call(setSeed, seed).first;
 }
 
 class _IsolatedRWKV implements RWKV {
@@ -250,6 +256,8 @@ class _IsolatedRWKV implements RWKV {
       getGenerateState,
       generatingStateStream,
       stopGenerate,
+      getSeed,
+      setSeed,
     };
     for (final method in methods) {
       handlers[method.toString()] = method;
@@ -310,4 +318,10 @@ class _IsolatedRWKV implements RWKV {
 
   @override
   Future<String> getSocName() => runtime.getSocName();
+
+  @override
+  Future<int> getSeed() => runtime.getSeed();
+
+  @override
+  Future setSeed(int seed) => runtime.setSeed(seed);
 }
