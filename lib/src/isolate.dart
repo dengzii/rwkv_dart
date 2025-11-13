@@ -1,8 +1,8 @@
 import 'dart:isolate';
 
+import 'package:rwkv_dart/src/backend.dart';
 import 'package:rwkv_dart/src/logger.dart';
 import 'package:rwkv_dart/src/rwkv.dart';
-import 'package:rwkv_dart/src/backend.dart';
 
 class IsolateMessage {
   final String id;
@@ -154,6 +154,16 @@ class RWKVIsolateProxy implements RWKV {
 
   @override
   Future setSeed(int seed) => _call(setSeed, seed).first;
+
+  @override
+  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) =>
+      _call(runEvaluation, param).cast<RunEvaluationResult>().first;
+
+  @override
+  Future<String> dumpStateInfo() => _call(dumpStateInfo).cast<String>().first;
+
+  @override
+  Future setImageId(String id) => _call(setImageId, id).first;
 }
 
 class _IsolatedRWKV implements RWKV {
@@ -324,4 +334,14 @@ class _IsolatedRWKV implements RWKV {
 
   @override
   Future setSeed(int seed) => runtime.setSeed(seed);
+
+  @override
+  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) =>
+      runtime.runEvaluation(param);
+
+  @override
+  Future<String> dumpStateInfo() => runtime.dumpStateInfo();
+
+  @override
+  Future setImageId(String id) => runtime.setImageId(id);
 }

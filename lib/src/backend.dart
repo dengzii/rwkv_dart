@@ -7,7 +7,6 @@ import 'package:ffi/ffi.dart';
 import 'package:logging/logging.dart';
 import 'package:rwkv_dart/src/logger.dart';
 import 'package:rwkv_dart/src/rwkv.dart';
-import 'package:rwkv_dart/src/utils.dart';
 
 import 'rwkv_mobile_ffi.dart';
 
@@ -118,6 +117,15 @@ class RWKVBackend implements RWKV {
       throw Exception('Failed to initialize RWKV backend');
     }
     logd('ffi initialized');
+
+    ffi.Pointer<ffi.Char> ptr = malloc.allocate<ffi.Char>(64);
+    final retVal = _rwkv.rwkvmobile_runtime_get_available_backend_names(
+      ptr,
+      64,
+    );
+    _tryThrowErrorRetVal(retVal);
+    final names = ptr.cast<Utf8>().toDartString();
+    logd('available backend: $names');
   }
 
   @override
@@ -137,10 +145,6 @@ class RWKVBackend implements RWKV {
   @override
   Future<int> loadModel(LoadModelParam param) async {
     String modelPath = param.modelPath;
-    if (modelPath.endsWith(".zip")) {
-      await Utils.unzip(modelPath);
-      modelPath = modelPath.substring(0, modelPath.lastIndexOf('.zip'));
-    }
 
     final backendName = param.backend.name.toNativeChar();
 
@@ -275,17 +279,19 @@ class RWKVBackend implements RWKV {
 
   @override
   Future setGenerateConfig(GenerateConfig param) async {
-    this.generationParam = param;
     logd('set generate config: $param');
 
-    int retVal = _rwkv.rwkvmobile_runtime_set_prompt(
-      _handlerPtr,
-      _modelId,
-      generationParam.prompt.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
+    int retVal = 0;
+    if (param.prompt != generationParam.prompt) {
+      retVal = _rwkv.rwkvmobile_runtime_set_prompt(
+        _handlerPtr,
+        _modelId,
+        param.prompt.toNativeChar(),
+      );
+      _tryThrowErrorRetVal(retVal);
+    }
 
-    if (param.eosToken != null) {
+    if (param.eosToken != generationParam.eosToken) {
       retVal = _rwkv.rwkvmobile_runtime_set_eos_token(
         _handlerPtr,
         _modelId,
@@ -293,7 +299,7 @@ class RWKVBackend implements RWKV {
       );
       _tryThrowErrorRetVal(retVal);
     }
-    if (param.bosToken != null) {
+    if (param.bosToken != generationParam.bosToken) {
       retVal = _rwkv.rwkvmobile_runtime_set_bos_token(
         _handlerPtr,
         _modelId,
@@ -302,7 +308,7 @@ class RWKVBackend implements RWKV {
       _tryThrowErrorRetVal(retVal);
     }
 
-    if (param.tokenBanned.isNotEmpty) {
+    if (param.tokenBanned != generationParam.tokenBanned) {
       final ptr = calloc.allocate<ffi.Int>(param.tokenBanned.length);
       for (var i = 0; i < param.tokenBanned.length; i++) {
         ptr[i] = param.tokenBanned[i];
@@ -316,26 +322,42 @@ class RWKVBackend implements RWKV {
       _tryThrowErrorRetVal(retVal);
     }
 
-    retVal = _rwkv.rwkvmobile_runtime_set_user_role(
-      _handlerPtr,
-      _modelId,
-      param.userRole.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
+    if (param.userRole != generationParam.userRole) {
+      retVal = _rwkv.rwkvmobile_runtime_set_user_role(
+        _handlerPtr,
+        _modelId,
+        param.userRole.toNativeChar(),
+      );
+      _tryThrowErrorRetVal(retVal);
+    }
 
-    retVal = _rwkv.rwkvmobile_runtime_set_response_role(
-      _handlerPtr,
-      _modelId,
-      param.assistantRole.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
+    if (param.assistantRole != generationParam.assistantRole) {
+      retVal = _rwkv.rwkvmobile_runtime_set_response_role(
+        _handlerPtr,
+        _modelId,
+        param.assistantRole.toNativeChar(),
+      );
+      _tryThrowErrorRetVal(retVal);
+    }
 
-    retVal = _rwkv.rwkvmobile_runtime_set_thinking_token(
-      _handlerPtr,
-      _modelId,
-      generationParam.thinkingToken.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
+    if (param.thinkingToken != generationParam.thinkingToken) {
+      retVal = _rwkv.rwkvmobile_runtime_set_thinking_token(
+        _handlerPtr,
+        _modelId,
+        param.thinkingToken.toNativeChar(),
+      );
+      _tryThrowErrorRetVal(retVal);
+    }
+
+    if (param.spaceAfterRole != generationParam.spaceAfterRole) {
+      retVal = _rwkv.rwkvmobile_runtime_set_space_after_roles(
+        _handlerPtr,
+        _modelId,
+        param.spaceAfterRole ? 1 : 0,
+      );
+      _tryThrowErrorRetVal(retVal);
+    }
+    this.generationParam = param;
   }
 
   @override
@@ -495,6 +517,40 @@ class RWKVBackend implements RWKV {
       _handlerPtr,
       _modelId,
       seed,
+    );
+    _tryThrowErrorRetVal(retVal);
+  }
+
+  @override
+  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) async {
+    final r = _rwkv.rwkvmobile_runtime_run_evaluation(
+      _handlerPtr,
+      _modelId,
+      param.source.toNativeChar(),
+      param.target.toNativeChar(),
+    );
+    final List<double> logits = r.logits_vals.asTypedList(r.count).toList();
+    final List<bool> corrects = r.corrects
+        .cast<ffi.Int32>()
+        .asTypedList(r.count)
+        .toList()
+        .map((e) => e != 0)
+        .toList();
+    _rwkv.rwkvmobile_runtime_free_evaluation_results(r);
+    return RunEvaluationResult(logits: logits, corrects: corrects);
+  }
+
+  @override
+  Future<String> dumpStateInfo() async {
+    final r = _rwkv.rwkvmobile_get_state_cache_info(_handlerPtr, _modelId);
+    return r.cast<Utf8>().toDartString();
+  }
+
+  @override
+  Future setImageId(String id) async {
+    final retVal = _rwkv.rwkvmobile_runtime_set_image_unique_identifier(
+      _handlerPtr,
+      id.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
   }

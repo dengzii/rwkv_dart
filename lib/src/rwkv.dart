@@ -7,6 +7,69 @@ import 'isolate.dart';
 
 enum RWKVLogLevel { verbose, info, debug, warning, error }
 
+abstract class RWKV {
+  /// Create a RWKV ffi instance.
+  factory RWKV.create() => RWKVBackend();
+
+  /// Create a RWKV instance run in the isolate.
+  factory RWKV.isolated() => RWKVIsolateProxy();
+
+  /// Initialize the RWKV ffi instance.
+  ///
+  /// This method should be called before any other methods.
+  Future init([InitParam? param]);
+
+  Future setLogLevel(RWKVLogLevel level);
+
+  /// Load and initialize the model, return the model id.
+  Future<int> loadModel(LoadModelParam param);
+
+  Future setDecodeParam(DecodeParam param);
+
+  Future loadInitialState(String statePath);
+
+  Future<String> getSocName();
+
+  Future<String> getHtpArch();
+
+  Future<String> dumpLog();
+
+  /// Generate text from prompt.
+  /// The generated text will be streamed,
+  /// stream will be closed when generation is done.
+  Stream<String> generate(String prompt);
+
+  Stream<String> chat(List<String> history);
+
+  Future<GenerateState> getGenerateState();
+
+  Stream<GenerateState> generatingStateStream();
+
+  Future setGenerateConfig(GenerateConfig param);
+
+  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param);
+
+  Future<String> dumpStateInfo();
+
+  Future setImage(String path);
+
+  Future setImageId(String id);
+
+  Future setAudio(String path);
+
+  /// Clear the backend runtime state.
+  Future clearState();
+
+  Future stopGenerate();
+
+  Future<int> getSeed();
+
+  Future setSeed(int seed);
+
+  /// Release all resources, the instance should not be used after this.
+  Future release();
+}
+
 enum Backend {
   /// Android, Windows and Linux
   ncnn('ncnn'),
@@ -157,6 +220,8 @@ class GenerateConfig {
   final String userRole;
   final String assistantRole;
 
+  final bool spaceAfterRole;
+
   GenerateConfig({
     required this.maxTokens,
     required this.thinkingToken,
@@ -165,6 +230,7 @@ class GenerateConfig {
     required this.prompt,
     required this.returnWholeGeneratedResult,
     this.tokenBanned = const [],
+    this.spaceAfterRole = true,
     this.assistantRole = "Assistant",
     this.userRole = "User",
     this.eosToken,
@@ -264,59 +330,16 @@ class GenerateState {
   }
 }
 
-abstract class RWKV {
-  /// Create a RWKV ffi instance.
-  factory RWKV.create() => RWKVBackend();
+class RunEvaluationParam {
+  final String source;
+  final String target;
 
-  /// Create a RWKV instance run in the isolate.
-  factory RWKV.isolated() => RWKVIsolateProxy();
+  RunEvaluationParam({required this.source, required this.target});
+}
 
-  /// Initialize the RWKV ffi instance.
-  ///
-  /// This method should be called before any other methods.
-  Future init([InitParam? param]);
+class RunEvaluationResult {
+  final List<bool> corrects;
+  final List<double> logits;
 
-  Future setLogLevel(RWKVLogLevel level);
-
-  /// Load and initialize the model, return the model id.
-  Future<int> loadModel(LoadModelParam param);
-
-  Future setDecodeParam(DecodeParam param);
-
-  Future loadInitialState(String statePath);
-
-  Future<String> getSocName();
-
-  Future<String> getHtpArch();
-
-  Future<String> dumpLog();
-
-  /// Generate text from prompt.
-  /// The generated text will be streamed,
-  /// stream will be closed when generation is done.
-  Stream<String> generate(String prompt);
-
-  Stream<String> chat(List<String> history);
-
-  Future<GenerateState> getGenerateState();
-
-  Stream<GenerateState> generatingStateStream();
-
-  Future setGenerateConfig(GenerateConfig param);
-
-  Future setImage(String path);
-
-  Future setAudio(String path);
-
-  /// Clear the backend runtime state.
-  Future clearState();
-
-  Future stopGenerate();
-
-  Future<int> getSeed();
-
-  Future setSeed(int seed);
-
-  /// Release all resources, the instance should not be used after this.
-  Future release();
+  RunEvaluationResult({required this.corrects, required this.logits});
 }
