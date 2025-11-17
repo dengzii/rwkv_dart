@@ -10,6 +10,28 @@
 - 在 huggingface 等平台下载你想使用的推理后端对应的 [模型文件](https://huggingface.co/mollysama/rwkv-mobile-models)
   和 [词表文件](https://huggingface.co/mollysama/rwkv-mobile-models/tree/main/tokenizer)
 
+### 使用 QNN 后端
+
+1. 使用qnn后端需要准备额外的 .so，在 [这里下载](https://github.com/dengzii/rwkv_dart/releases/download/1.0.0/qnn.zip)
+
+2. 在加载模型时需要将qnn共享库所在的 *目录路径* 传入`LoadModelParam`的`qnnLibDir`参数.
+
+3. 在 AndroidManifest.xml 的 application 标签下添加以下声明:
+```xml
+    <uses-native-library
+        android:name="libneuronusdk_adapter.mtk.so"
+        android:required="false" />
+    <uses-native-library
+        android:name="libapuwareutils.mtk.so"
+        android:required="false" />
+    <uses-native-library
+        android:name="libapuwareutils_v2.mtk.so"
+        android:required="false" />
+    <uses-native-library
+        android:name="libcdsprpc.so"
+        android:required="false" />
+```
+
 ### Example:
 
 ```dart

@@ -95,9 +95,6 @@ class RWKVIsolateProxy implements RWKV {
       _call(generate, prompt).cast<String>();
 
   @override
-  Future setAudio(String path) => _call(setAudio, path).first;
-
-  @override
   Future setImage(String path) => _call(setImage, path).first;
 
   @override
@@ -164,6 +161,10 @@ class RWKVIsolateProxy implements RWKV {
 
   @override
   Future setImageId(String id) => _call(setImageId, id).first;
+
+  @override
+  Stream<List<double>> textToSpeech(TextToSpeechParam param) =>
+      _call(textToSpeech, param).cast<List<double>>();
 }
 
 class _IsolatedRWKV implements RWKV {
@@ -259,7 +260,7 @@ class _IsolatedRWKV implements RWKV {
       generate,
       release,
       loadInitialState,
-      setAudio,
+      textToSpeech,
       setImage,
       setDecodeParam,
       setGenerateConfig,
@@ -290,9 +291,6 @@ class _IsolatedRWKV implements RWKV {
 
   @override
   Stream<String> generate(String prompt) => runtime.generate(prompt);
-
-  @override
-  Future setAudio(String path) => runtime.setAudio(path);
 
   @override
   Future setImage(String path) => runtime.setImage(path);
@@ -344,4 +342,8 @@ class _IsolatedRWKV implements RWKV {
 
   @override
   Future setImageId(String id) => runtime.setImageId(id);
+
+  @override
+  Stream<List<double>> textToSpeech(TextToSpeechParam param) =>
+      runtime.textToSpeech(param);
 }

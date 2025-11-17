@@ -55,7 +55,8 @@ abstract class RWKV {
 
   Future setImageId(String id);
 
-  Future setAudio(String path);
+  /// wav audio data stream
+  Stream<List<double>> textToSpeech(TextToSpeechParam param);
 
   /// Clear the backend runtime state.
   Future clearState();
@@ -98,7 +99,28 @@ class InitParam {
   final String? dynamicLibDir;
   final RWKVLogLevel logLevel;
 
-  InitParam({this.dynamicLibDir, this.logLevel = RWKVLogLevel.debug});
+  // if using qnn, this is required
+  final String? qnnLibDir;
+
+  InitParam({
+    this.dynamicLibDir,
+    this.logLevel = RWKVLogLevel.debug,
+    this.qnnLibDir,
+  });
+}
+
+class TTSModelConfig {
+  final List<String> textNormalizers;
+  final String wav2vec2ModelPath;
+  final String biCodecTokenizerPath;
+  final String biCodecDetokenizerPath;
+
+  TTSModelConfig({
+    required this.textNormalizers,
+    required this.wav2vec2ModelPath,
+    required this.biCodecTokenizerPath,
+    required this.biCodecDetokenizerPath,
+  });
 }
 
 /// Param load rwkv model
@@ -107,14 +129,13 @@ class LoadModelParam {
   final String tokenizerPath;
   final Backend backend;
 
-  // if using qnn, this is required
-  final String? qnnLibDir;
+  final TTSModelConfig? ttsModelConfig;
 
   LoadModelParam({
     required this.modelPath,
     required this.tokenizerPath,
     required this.backend,
-    this.qnnLibDir,
+    this.ttsModelConfig,
   });
 }
 
@@ -342,4 +363,18 @@ class RunEvaluationResult {
   final List<double> logits;
 
   RunEvaluationResult({required this.corrects, required this.logits});
+}
+
+class TextToSpeechParam {
+  final String text;
+  final String outputAudioPath;
+  final String inputAudioPath;
+  final String? inputAudioText;
+
+  TextToSpeechParam({
+    required this.text,
+    required this.outputAudioPath,
+    required this.inputAudioPath,
+    this.inputAudioText,
+  });
 }

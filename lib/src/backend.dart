@@ -45,6 +45,8 @@ enum ErrorFlag {
   }
 }
 
+enum GenerationType { TEXT, TTS, IMAGE }
+
 extension _ on String {
   ffi.Pointer<ffi.Char> toNativeChar() => toNativeUtf8().cast<ffi.Char>();
 
@@ -64,7 +66,9 @@ class RWKVBackend implements RWKV {
   final _utf8codec = Utf8Codec(allowMalformed: true);
   int _lastGenerationAt = 0;
   int _generationPosition = 0;
+  int _generatedTTSLen = 0;
   int _modelId = 0;
+  String? _qnnLibDir;
 
   GenerateConfig generationParam = GenerateConfig.initial();
   GenerateState generationState = GenerateState.initial();
@@ -108,6 +112,7 @@ class RWKVBackend implements RWKV {
   Future init([InitParam? param]) async {
     dynamicLibraryDir = param?.dynamicLibDir ?? '';
 
+    _qnnLibDir = param?.qnnLibDir;
     _rwkv = rwkv_mobile(_loadDynamicLib());
 
     await setLogLevel(param?.logLevel ?? RWKVLogLevel.error);
@@ -142,6 +147,8 @@ class RWKVBackend implements RWKV {
     logd('log level set to $logLevel');
   }
 
+  Future loadTTSModel() async {}
+
   @override
   Future<int> loadModel(LoadModelParam param) async {
     String modelPath = param.modelPath;
@@ -149,20 +156,22 @@ class RWKVBackend implements RWKV {
     final backendName = param.backend.name.toNativeChar();
 
     if (param.backend == Backend.qnn) {
-      final tempDir = param.qnnLibDir;
-      if (tempDir == null) {
-        throw Exception('qnnLibDir is not set');
+      final qnnLibs = _qnnLibDir;
+      if (qnnLibs == null || qnnLibs.isEmpty) {
+        throw Exception(
+          'qnn libs is required when using qnn backend, set it in InitParam',
+        );
       }
       _rwkv.rwkvmobile_runtime_set_qnn_library_path(
         _handlerPtr,
-        '$tempDir/assets/lib/'.toNativeChar(),
+        qnnLibs.toNativeChar(),
       );
       _modelId = _rwkv.rwkvmobile_runtime_load_model_with_extra(
         _handlerPtr,
         modelPath.toNativeChar(),
         backendName,
         param.tokenizerPath.toNativeChar(),
-        '$tempDir/assets/lib/libQnnHtp.so'.toNativeVoid(),
+        '$qnnLibs/libQnnHtp.so'.toNativeVoid(),
       );
     } else {
       _modelId = _rwkv.rwkvmobile_runtime_load_model(
@@ -178,6 +187,26 @@ class RWKVBackend implements RWKV {
     logd(
       'model loaded, ${param.backend.name}, ${param.modelPath}, ${param.tokenizerPath}',
     );
+
+    final ttsConfig = param.ttsModelConfig;
+    if (ttsConfig != null) {
+      for (final normalizer in ttsConfig.textNormalizers) {
+        final retVal = _rwkv.rwkvmobile_runtime_tts_register_text_normalizer(
+          _handlerPtr,
+          normalizer.toNativeChar(),
+        );
+        _tryThrowErrorRetVal(retVal);
+      }
+      final retVal = _rwkv.rwkvmobile_runtime_sparktts_load_models(
+        _handlerPtr,
+        ttsConfig.wav2vec2ModelPath.toNativeChar(),
+        ttsConfig.biCodecTokenizerPath.toNativeChar(),
+        ttsConfig.biCodecDetokenizerPath.toNativeChar(),
+      );
+      _tryThrowErrorRetVal(retVal);
+      logd('tts model loaded');
+    }
+
     return _modelId;
   }
 
@@ -211,7 +240,7 @@ class RWKVBackend implements RWKV {
     _tryThrowErrorRetVal(retVal);
 
     final isResume = history.length % 2 == 0;
-    return _generationResultPolling(resume: isResume);
+    return _pollingGenerateResult(resume: isResume).cast();
   }
 
   @override
@@ -244,17 +273,7 @@ class RWKVBackend implements RWKV {
     );
     _tryThrowErrorRetVal(retVal);
 
-    return _generationResultPolling();
-  }
-
-  @override
-  Future setAudio(String path) async {
-    final retVal = _rwkv.rwkvmobile_runtime_set_audio_prompt(
-      _handlerPtr,
-      _modelId,
-      path.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
+    return _pollingGenerateResult().cast();
   }
 
   @override
@@ -400,10 +419,14 @@ class RWKVBackend implements RWKV {
     _modelId = -1;
   }
 
-  Stream<String> _generationResultPolling({bool resume = false}) {
+  Stream _pollingGenerateResult({
+    bool resume = false,
+    GenerationType type = GenerationType.TEXT,
+  }) {
     final generationId = _lastGenerationAt;
     if (!resume) {
       _generationPosition = 0;
+      _generatedTTSLen = 0;
     }
     return Stream.periodic(const Duration(milliseconds: 20))
         .map((e) {
@@ -411,25 +434,54 @@ class RWKVBackend implements RWKV {
             throw Exception('stopped due to generationId changed');
           }
           _updateTextGenerationState();
-          final resp = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
-            _handlerPtr,
-            _modelId,
-          );
-          if (resp.length == 0) {
-            return '';
+          switch (type) {
+            case GenerationType.TEXT:
+              return _getGenerationTextBuffer();
+            case GenerationType.TTS:
+              return _getGenerateAudioBuffer();
+            default:
+              throw UnimplementedError();
           }
-          final bytes = resp.content
-              .cast<ffi.Uint8>()
-              .asTypedList(resp.length)
-              .sublist(_generationPosition);
-
-          if (!generationParam.returnWholeGeneratedResult) {
-            _generationPosition = resp.length;
-          }
-          return _utf8codec.decode(bytes);
         })
         .takeWhile((_) => generationState.isGenerating)
-        .where((e) => e != '');
+        .where((e) => type == GenerationType.TEXT ? e != '' : e != null);
+  }
+
+  String _getGenerationTextBuffer() {
+    final resp = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
+      _handlerPtr,
+      _modelId,
+    );
+    if (resp.length == 0) {
+      return '';
+    }
+    final bytes = resp.content
+        .cast<ffi.Uint8>()
+        .asTypedList(resp.length)
+        .sublist(_generationPosition);
+    if (!generationParam.returnWholeGeneratedResult) {
+      _generationPosition = resp.length;
+    }
+    return _utf8codec.decode(bytes);
+  }
+
+  dynamic _getGenerateAudioBuffer() {
+    final len = _rwkv.rwkvmobile_runtime_get_tts_streaming_buffer_length(
+      _handlerPtr,
+    );
+    if (len == _generatedTTSLen) {
+      return null;
+    }
+    final buffer = _rwkv.rwkvmobile_runtime_get_tts_streaming_buffer(
+      _handlerPtr,
+    );
+    var samples = buffer.samples.asTypedList(buffer.length).toList();
+    _rwkv.rwkvmobile_runtime_free_tts_streaming_buffer(buffer);
+    if (!generationParam.returnWholeGeneratedResult) {
+      samples = samples.sublist(_generatedTTSLen);
+    }
+    _generatedTTSLen = buffer.length;
+    return samples;
   }
 
   void _checkGenerateState() {
@@ -553,5 +605,19 @@ class RWKVBackend implements RWKV {
       id.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
+  }
+
+  @override
+  Stream<List<double>> textToSpeech(TextToSpeechParam param) {
+    final retVal = _rwkv.rwkvmobile_runtime_run_spark_tts_streaming_async(
+      _handlerPtr,
+      _modelId,
+      param.text.toNativeChar(),
+      (param.inputAudioText ?? "").toNativeChar(),
+      param.inputAudioPath.toNativeChar(),
+      param.outputAudioPath.toNativeChar(),
+    );
+    _tryThrowErrorRetVal(retVal);
+    return _pollingGenerateResult(type: GenerationType.TTS).cast();
   }
 }
