@@ -406,16 +406,18 @@ class RWKVBackend implements RWKV {
     } on TimeoutException {
       loge('stop generate failed');
     }
-    logd('stop generate done');
+    logd('generate stopped!');
   }
 
   @override
   Future release() async {
+    _controllerGenerationState.stream.drain();
     _controllerGenerationState.close();
     final retVal = _rwkv.rwkvmobile_runtime_release(_handle);
     _tryThrowErrorRetVal(retVal);
     _handle = ffi.nullptr;
     _modelId = -1;
+    logd('rwkv runtime released!');
   }
 
   Stream _pollingGenerateResult({
@@ -525,7 +527,8 @@ class RWKVBackend implements RWKV {
       logd('generate state changed: ${state.isGenerating}');
     }
 
-    if (!state.equals(generationState)) {
+    if (!state.equals(generationState) &&
+        !_controllerGenerationState.isClosed) {
       _controllerGenerationState.add(state);
     }
     generationState = state;

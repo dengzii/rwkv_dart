@@ -61,21 +61,31 @@ class IsolateMessage {
 class RWKVIsolateProxy with _ProxyCombinedMixin {
   late final SendPort sendPort;
   late final Stream<IsolateMessage> events;
+  late final ReceivePort receivePort;
+  late final Isolate isolate;
 
   RWKV? get callee => null;
 
   @override
   Future init([InitParam? param]) async {
     // init isolate
-    ReceivePort receivePort = ReceivePort('rwkv_proxy_receive_port');
+    receivePort = ReceivePort('rwkv_proxy_receive_port');
     events = receivePort.cast<IsolateMessage>().asBroadcastStream();
-    await _IsolatedRWKV.spawn(receivePort.sendPort);
+    isolate = await _IsolatedRWKV.spawn(receivePort.sendPort);
     final initMessage = await events.firstWhere((e) => e.isInitialMessage);
     sendPort = initMessage.param as SendPort;
-    logd('isolate init done');
-
+    logd('isolate proxy initialized');
     // init runtime
     await _call(init, param);
+  }
+
+  @override
+  Future release() async {
+    await _call(release);
+    receivePort.close();
+    events.cast().drain();
+    isolate.kill();
+    logd('rwkv isolate proxy released');
   }
 
   dynamic _call(Function method, [dynamic param]) {
@@ -92,14 +102,22 @@ class RWKVIsolateProxy with _ProxyCombinedMixin {
       });
     }
     if (isStream) {
-      return events.where((e) => e.id == message.id).map((e) {
-        if (e.error != '') {
-          throw Exception(e.error);
-        }
-        return e.param;
-      });
+      final ret = events.where((e) => e.id == message.id);
+      return _awaitStream(ret);
     }
     throw UnsupportedError('not supported, should be Future or Stream');
+  }
+
+  Stream _awaitStream(Stream<IsolateMessage> stream) async* {
+    await for (var e in stream) {
+      if (e.error != '') {
+        throw Exception(e.error);
+      }
+      if (e.done) {
+        break;
+      }
+      yield e.param;
+    }
   }
 }
 
@@ -128,6 +146,13 @@ class _IsolatedRWKV with _ProxyCombinedMixin {
     return isolate;
   }
 
+  @override
+  Future release() async {
+    await super.release();
+    receivePort.close();
+    logd('rwkv isolate released');
+  }
+
   Future _onIsolateSpawn(IsolateMessage init) async {
     sendPort = init.param as SendPort;
     sendPort.send(init.copyWith(param: receivePort.sendPort));
@@ -151,7 +176,7 @@ class _IsolatedRWKV with _ProxyCombinedMixin {
         loge(e);
       },
       onDone: () {
-        logd('rwkv isolate receive port done');
+        logd('rwkv isolate receive port closed');
       },
     );
   }
