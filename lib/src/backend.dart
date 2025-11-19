@@ -58,12 +58,14 @@ extension __ on ffi.Pointer<ffi.Char> {
 }
 
 class RWKVBackend implements RWKV {
+  final _utf8codec = Utf8Codec(allowMalformed: true);
+
   late final String dynamicLibraryDir;
-  late final RWKVLogLevel logLevel;
   late final rwkv_mobile _rwkv;
 
-  ffi.Pointer<ffi.Void> _handlerPtr = ffi.nullptr;
-  final _utf8codec = Utf8Codec(allowMalformed: true);
+  ffi.Pointer<ffi.Void> _handle = ffi.nullptr;
+
+  RWKVLogLevel logLevel = RWKVLogLevel.error;
   int _lastGenerationAt = 0;
   int _generationPosition = 0;
   int _generatedTTSLen = 0;
@@ -117,12 +119,10 @@ class RWKVBackend implements RWKV {
 
     await setLogLevel(param?.logLevel ?? RWKVLogLevel.error);
 
-    _handlerPtr = _rwkv.rwkvmobile_runtime_init();
-    if (_handlerPtr == ffi.nullptr) {
+    _handle = _rwkv.rwkvmobile_runtime_init();
+    if (_handle == ffi.nullptr) {
       throw Exception('Failed to initialize RWKV backend');
     }
-    logd('ffi initialized');
-
     ffi.Pointer<ffi.Char> ptr = malloc.allocate<ffi.Char>(64);
     final retVal = _rwkv.rwkvmobile_runtime_get_available_backend_names(
       ptr,
@@ -130,7 +130,7 @@ class RWKVBackend implements RWKV {
     );
     _tryThrowErrorRetVal(retVal);
     final names = ptr.cast<Utf8>().toDartString();
-    logd('available backend: $names');
+    logd('ffi initialized, available backend: $names');
   }
 
   @override
@@ -147,8 +147,6 @@ class RWKVBackend implements RWKV {
     logd('log level set to $logLevel');
   }
 
-  Future loadTTSModel() async {}
-
   @override
   Future<int> loadModel(LoadModelParam param) async {
     String modelPath = param.modelPath;
@@ -163,11 +161,11 @@ class RWKVBackend implements RWKV {
         );
       }
       _rwkv.rwkvmobile_runtime_set_qnn_library_path(
-        _handlerPtr,
+        _handle,
         qnnLibs.toNativeChar(),
       );
       _modelId = _rwkv.rwkvmobile_runtime_load_model_with_extra(
-        _handlerPtr,
+        _handle,
         modelPath.toNativeChar(),
         backendName,
         param.tokenizerPath.toNativeChar(),
@@ -175,7 +173,7 @@ class RWKVBackend implements RWKV {
       );
     } else {
       _modelId = _rwkv.rwkvmobile_runtime_load_model(
-        _handlerPtr,
+        _handle,
         modelPath.toNativeChar(),
         backendName,
         param.tokenizerPath.toNativeChar(),
@@ -184,21 +182,18 @@ class RWKVBackend implements RWKV {
     if (_modelId < 0) {
       throw Exception('Failed to load model');
     }
-    logd(
-      'model loaded, ${param.backend.name}, ${param.modelPath}, ${param.tokenizerPath}',
-    );
 
     final ttsConfig = param.ttsModelConfig;
     if (ttsConfig != null) {
       for (final normalizer in ttsConfig.textNormalizers) {
         final retVal = _rwkv.rwkvmobile_runtime_tts_register_text_normalizer(
-          _handlerPtr,
+          _handle,
           normalizer.toNativeChar(),
         );
         _tryThrowErrorRetVal(retVal);
       }
       final retVal = _rwkv.rwkvmobile_runtime_sparktts_load_models(
-        _handlerPtr,
+        _handle,
         ttsConfig.wav2vec2ModelPath.toNativeChar(),
         ttsConfig.biCodecTokenizerPath.toNativeChar(),
         ttsConfig.biCodecDetokenizerPath.toNativeChar(),
@@ -207,6 +202,9 @@ class RWKVBackend implements RWKV {
       logd('tts model loaded');
     }
 
+    logd(
+      'model loaded, ${param.backend.name}, ${param.modelPath}, ${param.tokenizerPath}',
+    );
     return _modelId;
   }
 
@@ -229,7 +227,7 @@ class RWKVBackend implements RWKV {
     _checkGenerateState();
 
     final retVal = _rwkv.rwkvmobile_runtime_eval_chat_with_history_async(
-      _handlerPtr,
+      _handle,
       _modelId,
       inputsPtr,
       numInputs,
@@ -246,7 +244,7 @@ class RWKVBackend implements RWKV {
   @override
   Future clearState() async {
     logd('clear state');
-    final retVal = _rwkv.rwkvmobile_runtime_clear_state(_handlerPtr, _modelId);
+    final retVal = _rwkv.rwkvmobile_runtime_clear_state(_handle, _modelId);
     _tryThrowErrorRetVal(retVal);
   }
 
@@ -264,7 +262,7 @@ class RWKVBackend implements RWKV {
     _checkGenerateState();
 
     final retVal = _rwkv.rwkvmobile_runtime_gen_completion_async(
-      _handlerPtr,
+      _handle,
       _modelId,
       prompt.toNativeChar(),
       generationParam.maxTokens,
@@ -285,12 +283,12 @@ class RWKVBackend implements RWKV {
   Future setDecodeParam(DecodeParam param) async {
     logd('set decode param: $param');
     _rwkv.rwkvmobile_runtime_set_sampler_params(
-      _handlerPtr,
+      _handle,
       _modelId,
       param.toNativeSamplerParam(),
     );
     _rwkv.rwkvmobile_runtime_set_penalty_params(
-      _handlerPtr,
+      _handle,
       _modelId,
       param.toNativePenaltyParam(),
     );
@@ -303,7 +301,7 @@ class RWKVBackend implements RWKV {
     int retVal = 0;
     if (param.prompt != generationParam.prompt) {
       retVal = _rwkv.rwkvmobile_runtime_set_prompt(
-        _handlerPtr,
+        _handle,
         _modelId,
         param.prompt.toNativeChar(),
       );
@@ -312,7 +310,7 @@ class RWKVBackend implements RWKV {
 
     if (param.eosToken != generationParam.eosToken) {
       retVal = _rwkv.rwkvmobile_runtime_set_eos_token(
-        _handlerPtr,
+        _handle,
         _modelId,
         param.eosToken!.toNativeChar(),
       );
@@ -320,7 +318,7 @@ class RWKVBackend implements RWKV {
     }
     if (param.bosToken != generationParam.bosToken) {
       retVal = _rwkv.rwkvmobile_runtime_set_bos_token(
-        _handlerPtr,
+        _handle,
         _modelId,
         param.bosToken!.toNativeChar(),
       );
@@ -333,7 +331,7 @@ class RWKVBackend implements RWKV {
         ptr[i] = param.tokenBanned[i];
       }
       retVal = _rwkv.rwkvmobile_runtime_set_token_banned(
-        _handlerPtr,
+        _handle,
         _modelId,
         ptr,
         param.tokenBanned.length,
@@ -343,7 +341,7 @@ class RWKVBackend implements RWKV {
 
     if (param.userRole != generationParam.userRole) {
       retVal = _rwkv.rwkvmobile_runtime_set_user_role(
-        _handlerPtr,
+        _handle,
         _modelId,
         param.userRole.toNativeChar(),
       );
@@ -352,7 +350,7 @@ class RWKVBackend implements RWKV {
 
     if (param.assistantRole != generationParam.assistantRole) {
       retVal = _rwkv.rwkvmobile_runtime_set_response_role(
-        _handlerPtr,
+        _handle,
         _modelId,
         param.assistantRole.toNativeChar(),
       );
@@ -361,7 +359,7 @@ class RWKVBackend implements RWKV {
 
     if (param.thinkingToken != generationParam.thinkingToken) {
       retVal = _rwkv.rwkvmobile_runtime_set_thinking_token(
-        _handlerPtr,
+        _handle,
         _modelId,
         param.thinkingToken.toNativeChar(),
       );
@@ -370,7 +368,7 @@ class RWKVBackend implements RWKV {
 
     if (param.spaceAfterRole != generationParam.spaceAfterRole) {
       retVal = _rwkv.rwkvmobile_runtime_set_space_after_roles(
-        _handlerPtr,
+        _handle,
         _modelId,
         param.spaceAfterRole ? 1 : 0,
       );
@@ -397,7 +395,7 @@ class RWKVBackend implements RWKV {
     try {
       await Future.doWhile(() async {
         final retVal = _rwkv.rwkvmobile_runtime_stop_generation(
-          _handlerPtr,
+          _handle,
           _modelId,
         );
         _tryThrowErrorRetVal(retVal);
@@ -413,9 +411,10 @@ class RWKVBackend implements RWKV {
 
   @override
   Future release() async {
-    final retVal = _rwkv.rwkvmobile_runtime_release(_handlerPtr);
+    _controllerGenerationState.close();
+    final retVal = _rwkv.rwkvmobile_runtime_release(_handle);
     _tryThrowErrorRetVal(retVal);
-    _handlerPtr = ffi.nullptr;
+    _handle = ffi.nullptr;
     _modelId = -1;
   }
 
@@ -449,7 +448,7 @@ class RWKVBackend implements RWKV {
 
   String _getGenerationTextBuffer() {
     final resp = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
-      _handlerPtr,
+      _handle,
       _modelId,
     );
     if (resp.length == 0) {
@@ -467,14 +466,12 @@ class RWKVBackend implements RWKV {
 
   dynamic _getGenerateAudioBuffer() {
     final len = _rwkv.rwkvmobile_runtime_get_tts_streaming_buffer_length(
-      _handlerPtr,
+      _handle,
     );
     if (len == _generatedTTSLen) {
       return null;
     }
-    final buffer = _rwkv.rwkvmobile_runtime_get_tts_streaming_buffer(
-      _handlerPtr,
-    );
+    final buffer = _rwkv.rwkvmobile_runtime_get_tts_streaming_buffer(_handle);
     var samples = buffer.samples.asTypedList(buffer.length).toList();
     _rwkv.rwkvmobile_runtime_free_tts_streaming_buffer(buffer);
     if (!generationParam.returnWholeGeneratedResult) {
@@ -485,7 +482,7 @@ class RWKVBackend implements RWKV {
   }
 
   void _checkGenerateState() {
-    if (_rwkv.rwkvmobile_runtime_is_generating(_handlerPtr, _modelId) != 0) {
+    if (_rwkv.rwkvmobile_runtime_is_generating(_handle, _modelId) != 0) {
       throw Exception('LLM is already generating');
     }
   }
@@ -503,19 +500,19 @@ class RWKVBackend implements RWKV {
 
   GenerateState _updateTextGenerationState() {
     final prefillSpeed = _rwkv.rwkvmobile_runtime_get_avg_prefill_speed(
-      _handlerPtr,
+      _handle,
       _modelId,
     );
     final decodeSpeed = _rwkv.rwkvmobile_runtime_get_avg_decode_speed(
-      _handlerPtr,
+      _handle,
       _modelId,
     );
     final prefillProgress = _rwkv.rwkvmobile_runtime_get_prefill_progress(
-      _handlerPtr,
+      _handle,
       _modelId,
     );
     final isGenerating =
-        _rwkv.rwkvmobile_runtime_is_generating(_handlerPtr, _modelId) != 0;
+        _rwkv.rwkvmobile_runtime_is_generating(_handle, _modelId) != 0;
     final state = GenerateState(
       isGenerating: isGenerating,
       prefillProgress: prefillProgress,
@@ -538,7 +535,7 @@ class RWKVBackend implements RWKV {
   @override
   Future loadInitialState(String path) async {
     final retVal = _rwkv.rwkvmobile_runtime_load_initial_state(
-      _handlerPtr,
+      _handle,
       _modelId,
       path.toNativeChar(),
     );
@@ -559,24 +556,20 @@ class RWKVBackend implements RWKV {
 
   @override
   Future<int> getSeed() async {
-    final retVal = _rwkv.rwkvmobile_runtime_get_seed(_handlerPtr, _modelId);
+    final retVal = _rwkv.rwkvmobile_runtime_get_seed(_handle, _modelId);
     return retVal;
   }
 
   @override
   Future setSeed(int seed) async {
-    final retVal = _rwkv.rwkvmobile_runtime_set_seed(
-      _handlerPtr,
-      _modelId,
-      seed,
-    );
+    final retVal = _rwkv.rwkvmobile_runtime_set_seed(_handle, _modelId, seed);
     _tryThrowErrorRetVal(retVal);
   }
 
   @override
   Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) async {
     final r = _rwkv.rwkvmobile_runtime_run_evaluation(
-      _handlerPtr,
+      _handle,
       _modelId,
       param.source.toNativeChar(),
       param.target.toNativeChar(),
@@ -594,14 +587,14 @@ class RWKVBackend implements RWKV {
 
   @override
   Future<String> dumpStateInfo() async {
-    final r = _rwkv.rwkvmobile_get_state_cache_info(_handlerPtr, _modelId);
+    final r = _rwkv.rwkvmobile_get_state_cache_info(_handle, _modelId);
     return r.cast<Utf8>().toDartString();
   }
 
   @override
   Future setImageId(String id) async {
     final retVal = _rwkv.rwkvmobile_runtime_set_image_unique_identifier(
-      _handlerPtr,
+      _handle,
       id.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
@@ -610,7 +603,7 @@ class RWKVBackend implements RWKV {
   @override
   Stream<List<double>> textToSpeech(TextToSpeechParam param) {
     final retVal = _rwkv.rwkvmobile_runtime_run_spark_tts_streaming_async(
-      _handlerPtr,
+      _handle,
       _modelId,
       param.text.toNativeChar(),
       (param.inputAudioText ?? "").toNativeChar(),
@@ -618,6 +611,13 @@ class RWKVBackend implements RWKV {
       param.outputAudioPath.toNativeChar(),
     );
     _tryThrowErrorRetVal(retVal);
+    logd(
+      'tts streaming started, '
+      'text:${param.text}, '
+      'audioText:${param.inputAudioText}, '
+      'audioPath:${param.inputAudioPath}'
+      'output:${param.outputAudioPath}',
+    );
     return _pollingGenerateResult(type: GenerationType.TTS).cast();
   }
 }

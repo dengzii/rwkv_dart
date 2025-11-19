@@ -58,9 +58,11 @@ class IsolateMessage {
   }
 }
 
-class RWKVIsolateProxy implements RWKV {
+class RWKVIsolateProxy with _ProxyCombinedMixin {
   late final SendPort sendPort;
   late final Stream<IsolateMessage> events;
+
+  RWKV? get callee => null;
 
   @override
   Future init([InitParam? param]) async {
@@ -73,105 +75,46 @@ class RWKVIsolateProxy implements RWKV {
     logd('isolate init done');
 
     // init runtime
-    await _call(init, param).first;
+    await _call(init, param);
   }
 
-  @override
-  Future setLogLevel(RWKVLogLevel level) => _call(setLogLevel, level).first;
-
-  @override
-  Future<int> loadModel(LoadModelParam param) =>
-      _call(loadModel, param).cast<int>().first;
-
-  @override
-  Stream<String> chat(List<String> history) =>
-      _call(chat, history).cast<String>();
-
-  @override
-  Future clearState() => _call(clearState).first;
-
-  @override
-  Stream<String> generate(String prompt) =>
-      _call(generate, prompt).cast<String>();
-
-  @override
-  Future setImage(String path) => _call(setImage, path).first;
-
-  @override
-  Future setDecodeParam(DecodeParam param) =>
-      _call(setDecodeParam, param).first;
-
-  @override
-  Future setGenerateConfig(GenerateConfig param) =>
-      _call(setGenerateConfig, param).first;
-
-  @override
-  Future<GenerateState> getGenerateState() async =>
-      await _call(getGenerateState).first as GenerateState;
-
-  @override
-  Stream<GenerateState> generatingStateStream() =>
-      _call(generatingStateStream).cast<GenerateState>();
-
-  @override
-  Future stopGenerate() => _call(stopGenerate).first;
-
-  Stream _call(Function method, [dynamic param]) async* {
+  dynamic _call(Function method, [dynamic param]) {
+    final isStream = method.toString().contains('=> Stream');
+    final isFuture = method.toString().contains('=> Future');
     final message = IsolateMessage.fromFunc(method, param);
     sendPort.send(message);
-    final src = events.where((e) => e.id == message.id);
-    await for (final message in src) {
-      if (message.error != '') {
-        throw Exception(message.error);
-      }
-      if (message.done) {
-        break;
-      }
-      yield message.param;
+    if (isFuture) {
+      return events.firstWhere((e) => e.id == message.id).then((e) {
+        if (e.error != '') {
+          throw Exception(e.error);
+        }
+        return e.param;
+      });
     }
+    if (isStream) {
+      return events.where((e) => e.id == message.id).map((e) {
+        if (e.error != '') {
+          throw Exception(e.error);
+        }
+        return e.param;
+      });
+    }
+    throw UnsupportedError('not supported, should be Future or Stream');
   }
-
-  @override
-  Future loadInitialState(String path) => _call(loadInitialState, path).first;
-
-  @override
-  Future release() => _call(release).first;
-
-  @override
-  Future<String> dumpLog() => _call(dumpLog).cast<String>().first;
-
-  @override
-  Future<String> getHtpArch() => _call(getHtpArch).cast<String>().first;
-
-  @override
-  Future<String> getSocName() => _call(getSocName).cast<String>().first;
-
-  @override
-  Future<int> getSeed() => _call(getSeed).cast<int>().first;
-
-  @override
-  Future setSeed(int seed) => _call(setSeed, seed).first;
-
-  @override
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) =>
-      _call(runEvaluation, param).cast<RunEvaluationResult>().first;
-
-  @override
-  Future<String> dumpStateInfo() => _call(dumpStateInfo).cast<String>().first;
-
-  @override
-  Future setImageId(String id) => _call(setImageId, id).first;
-
-  @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) =>
-      _call(textToSpeech, param).cast<List<double>>();
 }
 
-class _IsolatedRWKV implements RWKV {
+class _IsolatedRWKV with _ProxyCombinedMixin {
   final Map<String, Function> handlers = {};
   late final RWKVBackend runtime = RWKVBackend();
   late final SendPort sendPort;
   late final ReceivePort receivePort = ReceivePort('rwkv_isolate_receive_port');
+
+  RWKV? get callee => runtime;
+
+  @override
+  dynamic _call(Function method, [dynamic param]) {
+    throw UnsupportedError('not supported');
+  }
 
   _IsolatedRWKV._();
 
@@ -186,10 +129,11 @@ class _IsolatedRWKV implements RWKV {
   }
 
   Future _onIsolateSpawn(IsolateMessage init) async {
-    _initHandler();
     sendPort = init.param as SendPort;
     sendPort.send(init.copyWith(param: receivePort.sendPort));
-
+    for (var func in interfaces) {
+      handlers[func.toString()] = func;
+    }
     receivePort.cast<IsolateMessage>().listen(
       (message) async {
         try {
@@ -218,14 +162,13 @@ class _IsolatedRWKV implements RWKV {
 
     dynamic res;
     if (message.isInitialMessage) {
-      _initHandler();
       sendPort = param as SendPort;
       sendPort.send(message.copyWith(param: receivePort.sendPort));
     } else {
       final handler = handlers[method];
       if (handler == null) {
         throw Exception(
-          '😡 Unknown method: $method, did you register it in _IsolatedRWKV._initHandler?',
+          '😡 Unknown method: $method, did you register it in _ProxyCombinedMixin.getInterfaces()?',
         );
       }
       res = param == null ? handler() : handler(param);
@@ -249,101 +192,204 @@ class _IsolatedRWKV implements RWKV {
       sendPort.send(message.copyWith(param: res));
     }
   }
+}
 
-  void _initHandler() {
-    final methods = {
-      init,
-      setLogLevel,
-      loadModel,
-      chat,
-      clearState,
-      generate,
-      release,
-      loadInitialState,
-      textToSpeech,
-      setImage,
-      setDecodeParam,
-      setGenerateConfig,
-      getGenerateState,
-      generatingStateStream,
-      stopGenerate,
-      getSeed,
-      setSeed,
-    };
-    for (final method in methods) {
-      handlers[method.toString()] = method;
-    }
+mixin _ProxyCombinedMixin implements RWKV {
+  RWKV? get callee {
+    throw UnimplementedError("override me");
   }
 
-  Future init([InitParam? param]) => runtime.init(param);
+  _call(Function method, [dynamic param]) {
+    throw UnimplementedError("override me");
+  }
+
+  Set<Function> get interfaces => {
+    init,
+    setLogLevel,
+    loadModel,
+    chat,
+    clearState,
+    generate,
+    release,
+    getHtpArch,
+    dumpStateInfo,
+    dumpLog,
+    getSocName,
+    loadInitialState,
+    textToSpeech,
+    setImage,
+    setDecodeParam,
+    setGenerateConfig,
+    getGenerateState,
+    generatingStateStream,
+    stopGenerate,
+    getSeed,
+    setSeed,
+  };
 
   @override
-  Future setLogLevel(RWKVLogLevel level) => runtime.setLogLevel(level);
+  Future init([InitParam? param]) async {
+    return callee?.init(param) ?? _call(init, param);
+  }
 
   @override
-  Future<int> loadModel(LoadModelParam param) => runtime.loadModel(param);
+  Future setLogLevel(RWKVLogLevel level) {
+    return callee?.setLogLevel(level) ?? _call(setLogLevel, level);
+  }
 
   @override
-  Stream<String> chat(List<String> history) => runtime.chat(history);
+  Future<int> loadModel(LoadModelParam param) async {
+    if (callee != null) {
+      return callee!.loadModel(param);
+    }
+    return await _call(loadModel, param);
+  }
 
   @override
-  Future clearState() => runtime.clearState();
+  Stream<String> chat(List<String> history) {
+    return callee?.chat(history) ?? _call(chat, history).cast<String>();
+  }
 
   @override
-  Stream<String> generate(String prompt) => runtime.generate(prompt);
+  Future clearState() {
+    return callee?.clearState() ?? _call(clearState);
+  }
 
   @override
-  Future setImage(String path) => runtime.setImage(path);
+  Stream<String> generate(String prompt) {
+    if (callee != null) {
+      return callee!.generate(prompt);
+    }
+    return _call(generate, prompt).cast<String>();
+  }
 
   @override
-  Future setDecodeParam(DecodeParam param) => runtime.setDecodeParam(param);
+  Future setImage(String path) {
+    if (callee != null) {
+      return callee!.setImage(path);
+    }
+    return _call(setImage, path);
+  }
 
   @override
-  Future setGenerateConfig(GenerateConfig param) =>
-      runtime.setGenerateConfig(param);
+  Future setDecodeParam(DecodeParam param) {
+    if (callee != null) {
+      return callee!.setDecodeParam(param);
+    }
+    return _call(setDecodeParam, param);
+  }
 
   @override
-  Future<GenerateState> getGenerateState() => runtime.getGenerateState();
+  Future setGenerateConfig(GenerateConfig param) {
+    if (callee != null) {
+      return callee!.setGenerateConfig(param);
+    }
+    return _call(setGenerateConfig, param);
+  }
 
   @override
-  Stream<GenerateState> generatingStateStream() =>
-      runtime.generatingStateStream();
+  Future<GenerateState> getGenerateState() async {
+    if (callee != null) {
+      return callee!.getGenerateState();
+    }
+    return await _call(getGenerateState);
+  }
 
   @override
-  Future stopGenerate() => runtime.stopGenerate();
+  Stream<GenerateState> generatingStateStream() {
+    if (callee != null) {
+      return callee!.generatingStateStream();
+    }
+    return _call(generatingStateStream).cast<GenerateState>();
+  }
 
   @override
-  Future loadInitialState(String path) => runtime.loadInitialState(path);
+  Future stopGenerate() {
+    if (callee != null) {
+      return callee!.stopGenerate();
+    }
+    return _call(stopGenerate);
+  }
 
   @override
-  Future release() => runtime.release();
+  Future loadInitialState(String path) {
+    if (callee != null) {
+      return callee!.loadInitialState(path);
+    }
+    return _call(loadInitialState, path);
+  }
 
   @override
-  Future<String> dumpLog() => runtime.dumpLog();
+  Future release() {
+    return callee?.release() ?? _call(release);
+  }
 
   @override
-  Future<String> getHtpArch() => runtime.getHtpArch();
+  Future<String> dumpLog() async {
+    if (callee != null) {
+      return callee!.dumpLog();
+    }
+    return await _call(dumpLog);
+  }
 
   @override
-  Future<String> getSocName() => runtime.getSocName();
+  Future<String> getHtpArch() async {
+    if (callee != null) {
+      return callee!.getHtpArch();
+    }
+    return await _call(getHtpArch);
+  }
 
   @override
-  Future<int> getSeed() => runtime.getSeed();
+  Future<String> getSocName() async {
+    if (callee != null) {
+      return callee!.getSocName();
+    }
+    return await _call(getSocName);
+  }
 
   @override
-  Future setSeed(int seed) => runtime.setSeed(seed);
+  Future<int> getSeed() async {
+    if (callee != null) {
+      return callee!.getSeed();
+    }
+    return await _call(getSeed);
+  }
 
   @override
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) =>
-      runtime.runEvaluation(param);
+  Future setSeed(int seed) {
+    return callee?.setSeed(seed) ?? _call(setSeed, seed);
+  }
 
   @override
-  Future<String> dumpStateInfo() => runtime.dumpStateInfo();
+  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) async {
+    if (callee != null) {
+      return callee!.runEvaluation(param);
+    }
+    return await _call(runEvaluation, param);
+  }
 
   @override
-  Future setImageId(String id) => runtime.setImageId(id);
+  Future<String> dumpStateInfo() async {
+    if (callee != null) {
+      return callee!.dumpStateInfo();
+    }
+    return await _call(dumpStateInfo);
+  }
 
   @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) =>
-      runtime.textToSpeech(param);
+  Future setImageId(String id) {
+    if (callee != null) {
+      return callee!.setImageId(id);
+    }
+    return _call(setImageId, id);
+  }
+
+  @override
+  Stream<List<double>> textToSpeech(TextToSpeechParam param) {
+    if (callee != null) {
+      return callee!.textToSpeech(param);
+    }
+    return _call(textToSpeech, param).cast<List<double>>();
+  }
 }
