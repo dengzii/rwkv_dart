@@ -41,11 +41,11 @@ abstract class RWKV {
 
   Stream<String> chat(List<String> history);
 
-  Future<GenerateState> getGenerateState();
+  Future<GenerationState> getGenerationState();
 
-  Stream<GenerateState> generatingStateStream();
+  Stream<GenerationState> generationStateStream();
 
-  Future setGenerateConfig(GenerateConfig param);
+  Future setGenerationConfig(GenerationConfig param);
 
   Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param);
 
@@ -212,7 +212,7 @@ class DecodeParam {
   }
 }
 
-class GenerateConfig {
+class GenerationConfig {
   static const thinkingTokenNone = "";
   static const thinkingTokenFree = r"<think>";
 
@@ -243,7 +243,7 @@ class GenerateConfig {
 
   final bool spaceAfterRole;
 
-  GenerateConfig({
+  GenerationConfig({
     required this.maxTokens,
     required this.thinkingToken,
     required this.chatReasoning,
@@ -258,8 +258,8 @@ class GenerateConfig {
     this.bosToken,
   });
 
-  factory GenerateConfig.initial() {
-    return GenerateConfig(
+  factory GenerationConfig.initial() {
+    return GenerationConfig(
       maxTokens: 2000,
       thinkingToken: thinkingTokenNone,
       chatReasoning: false,
@@ -269,7 +269,7 @@ class GenerateConfig {
     );
   }
 
-  GenerateConfig copyWith({
+  GenerationConfig copyWith({
     int? maxTokens,
     bool? chatReasoning,
     String? thinkingToken,
@@ -277,7 +277,7 @@ class GenerateConfig {
     String? prompt,
     bool? returnWholeGeneratedResult,
   }) {
-    return GenerateConfig(
+    return GenerationConfig(
       maxTokens: maxTokens ?? this.maxTokens,
       thinkingToken: thinkingToken ?? this.thinkingToken,
       chatReasoning: chatReasoning ?? this.chatReasoning,
@@ -294,14 +294,14 @@ class GenerateConfig {
   }
 }
 
-class GenerateState {
+class GenerationState {
   final bool isGenerating;
   final double prefillProgress;
   final double prefillSpeed;
   final double decodeSpeed;
   final int timestamp;
 
-  GenerateState({
+  GenerationState({
     required this.isGenerating,
     required this.prefillProgress,
     required this.prefillSpeed,
@@ -309,8 +309,8 @@ class GenerateState {
     required this.timestamp,
   });
 
-  factory GenerateState.initial() {
-    return GenerateState(
+  factory GenerationState.initial() {
+    return GenerationState(
       isGenerating: false,
       prefillProgress: 0,
       prefillSpeed: 0,
@@ -319,14 +319,14 @@ class GenerateState {
     );
   }
 
-  GenerateState copyWith({
+  GenerationState copyWith({
     bool? isGenerating,
     double? prefillProgress,
     double? prefillSpeed,
     double? decodeSpeed,
     int? timestamp,
   }) {
-    return GenerateState(
+    return GenerationState(
       isGenerating: isGenerating ?? this.isGenerating,
       prefillProgress: prefillProgress ?? this.prefillProgress,
       prefillSpeed: prefillSpeed ?? this.prefillSpeed,
@@ -336,7 +336,7 @@ class GenerateState {
   }
 
   bool equals(Object? other) {
-    if (other is GenerateState) {
+    if (other is GenerationState) {
       return isGenerating == other.isGenerating &&
           prefillProgress == other.prefillProgress &&
           prefillSpeed == other.prefillSpeed &&
@@ -347,7 +347,7 @@ class GenerateState {
 
   @override
   String toString() {
-    return 'GenerateState(isGenerating: $isGenerating, prefillProgress: $prefillProgress, prefillSpeed: $prefillSpeed, decodeSpeed: $decodeSpeed, timestamp: $timestamp)';
+    return 'GenerationState(isGenerating: $isGenerating, prefillProgress: $prefillProgress, prefillSpeed: $prefillSpeed, decodeSpeed: $decodeSpeed, timestamp: $timestamp)';
   }
 }
 

@@ -244,9 +244,9 @@ mixin _ProxyCombinedMixin implements RWKV {
     textToSpeech,
     setImage,
     setDecodeParam,
-    setGenerateConfig,
-    getGenerateState,
-    generatingStateStream,
+    setGenerationConfig,
+    getGenerationState,
+    generationStateStream,
     stopGenerate,
     getSeed,
     setSeed,
@@ -305,27 +305,27 @@ mixin _ProxyCombinedMixin implements RWKV {
   }
 
   @override
-  Future setGenerateConfig(GenerateConfig param) {
+  Future setGenerationConfig(GenerationConfig param) {
     if (callee != null) {
-      return callee!.setGenerateConfig(param);
+      return callee!.setGenerationConfig(param);
     }
-    return _call(setGenerateConfig, param);
+    return _call(setGenerationConfig, param);
   }
 
   @override
-  Future<GenerateState> getGenerateState() async {
+  Future<GenerationState> getGenerationState() async {
     if (callee != null) {
-      return callee!.getGenerateState();
+      return callee!.getGenerationState();
     }
-    return await _call(getGenerateState);
+    return await _call(getGenerationState);
   }
 
   @override
-  Stream<GenerateState> generatingStateStream() {
+  Stream<GenerationState> generationStateStream() {
     if (callee != null) {
-      return callee!.generatingStateStream();
+      return callee!.generationStateStream();
     }
-    return _call(generatingStateStream).cast<GenerateState>();
+    return _call(generationStateStream).cast<GenerationState>();
   }
 
   @override

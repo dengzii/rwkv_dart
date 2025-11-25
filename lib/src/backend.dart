@@ -72,9 +72,9 @@ class RWKVBackend implements RWKV {
   int _modelId = 0;
   String? _qnnLibDir;
 
-  GenerateConfig generationParam = GenerateConfig.initial();
-  GenerateState generationState = GenerateState.initial();
-  StreamController<GenerateState> _controllerGenerationState =
+  GenerationConfig generationParam = GenerationConfig.initial();
+  GenerationState generationState = GenerationState.initial();
+  StreamController<GenerationState> _controllerGenerationState =
       StreamController.broadcast();
 
   RWKVBackend();
@@ -224,7 +224,7 @@ class RWKVBackend implements RWKV {
     }
     final numInputs = history.length;
 
-    _checkGenerateState();
+    _checkGenerationState();
 
     final retVal = _rwkv.rwkvmobile_runtime_eval_chat_with_history_async(
       _handle,
@@ -238,7 +238,7 @@ class RWKVBackend implements RWKV {
     _tryThrowErrorRetVal(retVal);
 
     final isResume = history.length % 2 == 0;
-    return _pollingGenerateResult(resume: isResume).cast();
+    return _pollingGenerationResult(resume: isResume).cast();
   }
 
   @override
@@ -259,7 +259,7 @@ class RWKVBackend implements RWKV {
     );
 
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
-    _checkGenerateState();
+    _checkGenerationState();
 
     final retVal = _rwkv.rwkvmobile_runtime_gen_completion_async(
       _handle,
@@ -271,7 +271,7 @@ class RWKVBackend implements RWKV {
     );
     _tryThrowErrorRetVal(retVal);
 
-    return _pollingGenerateResult().cast();
+    return _pollingGenerationResult().cast();
   }
 
   @override
@@ -295,8 +295,8 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future setGenerateConfig(GenerateConfig param) async {
-    logd('set generate config: $param');
+  Future setGenerationConfig(GenerationConfig param) async {
+    logd('set generation config: $param');
 
     int retVal = 0;
     if (param.prompt != generationParam.prompt) {
@@ -378,11 +378,11 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<GenerateState> generatingStateStream() =>
+  Stream<GenerationState> generationStateStream() =>
       _controllerGenerationState.stream;
 
   @override
-  Future<GenerateState> getGenerateState() async {
+  Future<GenerationState> getGenerationState() async {
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - generationState.timestamp > 100) {
       _updateTextGenerationState();
@@ -403,10 +403,10 @@ class RWKVBackend implements RWKV {
         _updateTextGenerationState();
         return generationState.isGenerating;
       }).timeout(Duration(seconds: 5));
+      logd('generate stopped!');
     } on TimeoutException {
       loge('stop generate failed');
     }
-    logd('generate stopped!');
   }
 
   @override
@@ -420,7 +420,7 @@ class RWKVBackend implements RWKV {
     logd('rwkv runtime released!');
   }
 
-  Stream _pollingGenerateResult({
+  Stream _pollingGenerationResult({
     bool resume = false,
     GenerationType type = GenerationType.TEXT,
   }) {
@@ -483,7 +483,7 @@ class RWKVBackend implements RWKV {
     return samples;
   }
 
-  void _checkGenerateState() {
+  void _checkGenerationState() {
     if (_rwkv.rwkvmobile_runtime_is_generating(_handle, _modelId) != 0) {
       throw Exception('LLM is already generating');
     }
@@ -500,7 +500,7 @@ class RWKVBackend implements RWKV {
     throw Exception('runtime error: ${errors.join(' | ')}');
   }
 
-  GenerateState _updateTextGenerationState() {
+  GenerationState _updateTextGenerationState() {
     final prefillSpeed = _rwkv.rwkvmobile_runtime_get_avg_prefill_speed(
       _handle,
       _modelId,
@@ -515,7 +515,7 @@ class RWKVBackend implements RWKV {
     );
     final isGenerating =
         _rwkv.rwkvmobile_runtime_is_generating(_handle, _modelId) != 0;
-    final state = GenerateState(
+    final state = GenerationState(
       isGenerating: isGenerating,
       prefillProgress: prefillProgress,
       prefillSpeed: prefillSpeed,
@@ -524,7 +524,7 @@ class RWKVBackend implements RWKV {
     );
 
     if (generationState.isGenerating != state.isGenerating) {
-      logd('generate state changed: ${state.isGenerating}');
+      logd('generation state changed: ${state.isGenerating}');
     }
 
     if (!state.equals(generationState) &&
@@ -621,6 +621,6 @@ class RWKVBackend implements RWKV {
       'audioPath:${param.inputAudioPath}'
       'output:${param.outputAudioPath}',
     );
-    return _pollingGenerateResult(type: GenerationType.TTS).cast();
+    return _pollingGenerationResult(type: GenerationType.TTS).cast();
   }
 }
