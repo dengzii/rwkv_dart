@@ -73,18 +73,20 @@ abstract class RWKV {
 
 enum Backend {
   /// Android, Windows and Linux
-  ncnn('ncnn'),
-  llamacpp('llama.cpp'),
+  ncnn('ncnn', fileExtensions: const ['bin']),
+  llamacpp('llama.cpp', fileExtensions: ['gguf', 'ggml']),
 
   /// Unsupported on Android
-  webRwkv('web-rwkv'),
-  qnn('qnn'),
-  mnn('mnn'),
-  coreml('coreml');
+  webRwkv('web-rwkv', fileExtensions: const ['st', 'prefab']),
+  qnn('qnn', fileExtensions: const ['rmpack', 'bin']),
+  mnn('mnn', fileExtensions: const ['mnn']),
+  mlx('mlx', fileExtensions: const ['zip']),
+  coreml('coreml', fileExtensions: const ['zip']);
 
   final String name;
+  final List<String> fileExtensions;
 
-  const Backend(this.name);
+  const Backend(this.name, {this.fileExtensions = const []});
 
   static late final _name2backend = {
     for (final backend in Backend.values) backend.name: backend,
@@ -92,6 +94,15 @@ enum Backend {
 
   static Backend fromString(String value) =>
       _name2backend[value.toLowerCase()]!;
+
+  static Backend? fromModelPath(String modelPath) {
+    final ext = modelPath.split('.').last.toLowerCase();
+    return Backend.values
+        .where(
+          (backend) => backend.fileExtensions.any((element) => element == ext),
+        )
+        .firstOrNull;
+  }
 }
 
 /// Param for init rwkv dart sdk
@@ -127,14 +138,14 @@ class TTSModelConfig {
 class LoadModelParam {
   final String modelPath;
   final String tokenizerPath;
-  final Backend backend;
+  final Backend? backend;
 
   final TTSModelConfig? ttsModelConfig;
 
   LoadModelParam({
     required this.modelPath,
     required this.tokenizerPath,
-    required this.backend,
+    this.backend,
     this.ttsModelConfig,
   });
 }

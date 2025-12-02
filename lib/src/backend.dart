@@ -69,7 +69,7 @@ class RWKVBackend implements RWKV {
   int _lastGenerationAt = 0;
   int _generationPosition = 0;
   int _generatedTTSLen = 0;
-  int _modelId = 0;
+  int _modelId = -1;
   String? _qnnLibDir;
 
   GenerationConfig generationParam = GenerationConfig.initial();
@@ -149,9 +149,22 @@ class RWKVBackend implements RWKV {
 
   @override
   Future<int> loadModel(LoadModelParam param) async {
+    if (_modelId != -1) {
+      final retVal = _rwkv.rwkvmobile_runtime_release_model(_handle, _modelId);
+      _tryThrowErrorRetVal(retVal);
+      _modelId = -1;
+    }
+
     String modelPath = param.modelPath;
 
-    final backendName = param.backend.name.toNativeChar();
+    final backend = Backend.fromModelPath(param.modelPath);
+    if (backend == null) {
+      throw Exception(
+        'auto detect backend failed for $modelPath, please specify backend explicitly',
+      );
+    }
+
+    final backendName = backend.name.toNativeChar();
 
     if (param.backend == Backend.qnn) {
       final qnnLibs = _qnnLibDir;
@@ -203,7 +216,7 @@ class RWKVBackend implements RWKV {
     }
 
     logd(
-      'model loaded, ${param.backend.name}, ${param.modelPath}, ${param.tokenizerPath}',
+      'model loaded, id:$_modelId, backend:${backend.name}, path:${param.modelPath}, ${param.tokenizerPath}',
     );
     return _modelId;
   }
@@ -243,6 +256,10 @@ class RWKVBackend implements RWKV {
 
   @override
   Future clearState() async {
+    if (_modelId == -1) {
+      logd('clear state skipped, model not loaded');
+      return;
+    }
     logd('clear state');
     final retVal = _rwkv.rwkvmobile_runtime_clear_state(_handle, _modelId);
     _tryThrowErrorRetVal(retVal);
