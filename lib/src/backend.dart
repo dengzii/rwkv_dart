@@ -247,6 +247,8 @@ class RWKVBackend implements RWKV {
       generationParam.maxTokens,
       ffi.nullptr,
       generationParam.chatReasoning ? 1 : 0,
+      generationParam.forceReasoning ? 1 : 0,
+      generationParam.addGenerationPrompt ? 1 : 0,
     );
     _tryThrowErrorRetVal(retVal);
 

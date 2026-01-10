@@ -146,6 +146,8 @@ class rwkv_mobile {
       int max_tokens,
       ffi.Pointer<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Char>, ffi.Int, ffi.Pointer<ffi.Char>)>> callback,
       int enable_reasoning,
+      int force_reasoning,
+      int add_generation_prompt,
       ) {
     return _rwkvmobile_runtime_eval_chat_with_history_async(
       handle,
@@ -155,6 +157,8 @@ class rwkv_mobile {
       max_tokens,
       callback,
       enable_reasoning,
+      force_reasoning,
+      add_generation_prompt,
     );
   }
 
@@ -169,6 +173,8 @@ class rwkv_mobile {
               ffi.Int,
               ffi.Pointer<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Char>, ffi.Int, ffi.Pointer<ffi.Char>)>>,
               ffi.Int,
+              ffi.Int,
+              ffi.Int,
               )
       >
   >('rwkvmobile_runtime_eval_chat_with_history_async');
@@ -181,6 +187,8 @@ class rwkv_mobile {
           int,
           int,
           ffi.Pointer<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Char>, ffi.Int, ffi.Pointer<ffi.Char>)>>,
+          int,
+          int,
           int,
           )
   >();
@@ -371,6 +379,8 @@ class rwkv_mobile {
       >
       callback_batch,
       int enable_reasoning,
+      int force_reasoning,
+      int add_generation_prompt,
       ) {
     return _rwkvmobile_runtime_eval_chat_batch_with_history_async(
       handle,
@@ -381,6 +391,8 @@ class rwkv_mobile {
       max_tokens,
       callback_batch,
       enable_reasoning,
+      force_reasoning,
+      add_generation_prompt,
     );
   }
 
@@ -400,6 +412,8 @@ class rwkv_mobile {
                   >
               >,
               ffi.Int,
+              ffi.Int,
+              ffi.Int,
               )
       >
   >('rwkvmobile_runtime_eval_chat_batch_with_history_async');
@@ -417,6 +431,8 @@ class rwkv_mobile {
                   ffi.Void Function(ffi.Int, ffi.Pointer<ffi.Pointer<ffi.Char>>, ffi.Pointer<ffi.Int>, ffi.Pointer<ffi.Pointer<ffi.Char>>)
               >
           >,
+          int,
+          int,
           int,
           )
   >();
@@ -494,6 +510,27 @@ class rwkv_mobile {
           ffi.Pointer<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Char>, ffi.Int, ffi.Pointer<ffi.Char>)>>,
           )
   >();
+
+  ffi.Pointer<ffi.Pointer<ffi.Char>> rwkvmobile_runtime_gen_completion_singletoken_topk(
+      rwkvmobile_runtime_t handle,
+      int model_id,
+      ffi.Pointer<ffi.Char> prompt,
+      int top_k,
+      ) {
+    return _rwkvmobile_runtime_gen_completion_singletoken_topk(
+      handle,
+      model_id,
+      prompt,
+      top_k,
+    );
+  }
+
+  late final _rwkvmobile_runtime_gen_completion_singletoken_topkPtr =
+  _lookup<
+      ffi.NativeFunction<ffi.Pointer<ffi.Pointer<ffi.Char>> Function(rwkvmobile_runtime_t, ffi.Int, ffi.Pointer<ffi.Char>, ffi.Int)>
+  >('rwkvmobile_runtime_gen_completion_singletoken_topk');
+  late final _rwkvmobile_runtime_gen_completion_singletoken_topk = _rwkvmobile_runtime_gen_completion_singletoken_topkPtr
+      .asFunction<ffi.Pointer<ffi.Pointer<ffi.Char>> Function(rwkvmobile_runtime_t, int, ffi.Pointer<ffi.Char>, int)>();
 
   int rwkvmobile_runtime_clear_state(
       rwkvmobile_runtime_t runtime,
@@ -1774,6 +1811,8 @@ final class evaluation_results extends ffi.Struct {
 
   @ffi.Int()
   external int count;
+
+  external ffi.Pointer<ffi.Pointer<ffi.Char>> output_texts;
 }
 
 typedef rwkvmobile_runtime_t = ffi.Pointer<ffi.Void>;

@@ -81,6 +81,7 @@ enum Backend {
   qnn('qnn', fileExtensions: const ['rmpack', 'bin']),
   mnn('mnn', fileExtensions: const ['mnn']),
   mlx('mlx', fileExtensions: const ['zip']),
+  mtp_np7('mtp_np7', fileExtensions: const ['rmpack']),
   coreml('coreml', fileExtensions: const ['zip']);
 
   final String name;
@@ -229,6 +230,8 @@ class GenerationConfig {
 
   final int maxTokens;
   final bool chatReasoning;
+  final bool forceReasoning;
+  final bool addGenerationPrompt;
 
   final int completionStopToken;
 
@@ -261,6 +264,8 @@ class GenerationConfig {
     required this.completionStopToken,
     required this.prompt,
     required this.returnWholeGeneratedResult,
+    this.forceReasoning = false,
+    this.addGenerationPrompt = false,
     this.tokenBanned = const [],
     this.spaceAfterRole = true,
     this.assistantRole = "Assistant",
