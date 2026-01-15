@@ -1,11 +1,19 @@
-import 'dart:ffi';
+import 'backend.dart'
+    if (dart.library.io) 'package:rwkv_dart/src/backend.dart'
+    if (dart.library.html) 'package:rwkv_dart/src/html/backend.dart';
 
-import 'package:rwkv_dart/src/backend.dart';
-import 'package:rwkv_dart/src/rwkv_mobile_ffi.dart';
-
-import 'isolate.dart';
+import 'isolate.dart'
+    if (dart.library.io) 'package:rwkv_dart/src/isolate.dart'
+    if (dart.library.html) 'package:rwkv_dart/src/html/isolate.dart';
 
 enum RWKVLogLevel { verbose, info, debug, warning, error }
+
+class RuntimeError {
+  final int code;
+  final String message;
+
+  RuntimeError({required this.code, required this.message});
+}
 
 abstract class RWKV {
   /// Create a RWKV ffi instance.
@@ -39,7 +47,7 @@ abstract class RWKV {
   /// stream will be closed when generation is done.
   Stream<String> generate(String prompt);
 
-  Stream<String> chat(List<String> history);
+  Stream<GenerationResponse> chat(List<String> history);
 
   Future<GenerationState> getGenerationState();
 
@@ -69,6 +77,16 @@ abstract class RWKV {
 
   /// Release all resources, the instance should not be used after this.
   Future release();
+}
+
+enum StopReason {
+  none,
+  eos,
+  maxTokens,
+  // canceled by user
+  canceled,
+  error,
+  timeout;
 }
 
 enum Backend {
@@ -170,6 +188,8 @@ class DecodeParam {
   /// 0.990 ~ 0.999
   final double penaltyDecay;
 
+  final int maxTokens;
+
   DecodeParam({
     required this.temperature,
     required this.topK,
@@ -177,28 +197,20 @@ class DecodeParam {
     required this.presencePenalty,
     required this.frequencyPenalty,
     required this.penaltyDecay,
+    required this.maxTokens,
   });
 
   factory DecodeParam.initial() {
     return DecodeParam(
       temperature: 1.0,
-      topK: 1,
+      topK: 20,
       topP: 0.5,
       presencePenalty: 0.5,
       frequencyPenalty: 0.5,
       penaltyDecay: 0.996,
+      maxTokens: 1000,
     );
   }
-
-  toNativeSamplerParam() => Struct.create<sampler_params>()
-    ..temperature = temperature
-    ..top_k = topK
-    ..top_p = topP;
-
-  toNativePenaltyParam() => Struct.create<penalty_params>()
-    ..presence_penalty = presencePenalty
-    ..frequency_penalty = frequencyPenalty
-    ..penalty_decay = penaltyDecay;
 
   DecodeParam copyWith({
     double? temperature,
@@ -207,6 +219,7 @@ class DecodeParam {
     double? presencePenalty,
     double? frequencyPenalty,
     double? penaltyDecay,
+    int? maxTokens,
   }) {
     return DecodeParam(
       temperature: temperature ?? this.temperature,
@@ -215,6 +228,7 @@ class DecodeParam {
       presencePenalty: presencePenalty ?? this.presencePenalty,
       frequencyPenalty: frequencyPenalty ?? this.frequencyPenalty,
       penaltyDecay: penaltyDecay ?? this.penaltyDecay,
+      maxTokens: maxTokens ?? this.maxTokens,
     );
   }
 
@@ -228,7 +242,6 @@ class GenerationConfig {
   static const thinkingTokenNone = "";
   static const thinkingTokenFree = r"<think>";
 
-  final int maxTokens;
   final bool chatReasoning;
   final bool forceReasoning;
   final bool addGenerationPrompt;
@@ -258,7 +271,6 @@ class GenerationConfig {
   final bool spaceAfterRole;
 
   GenerationConfig({
-    required this.maxTokens,
     required this.thinkingToken,
     required this.chatReasoning,
     required this.completionStopToken,
@@ -276,7 +288,6 @@ class GenerationConfig {
 
   factory GenerationConfig.initial() {
     return GenerationConfig(
-      maxTokens: 2000,
       thinkingToken: thinkingTokenNone,
       chatReasoning: false,
       completionStopToken: 0,
@@ -294,7 +305,6 @@ class GenerationConfig {
     bool? returnWholeGeneratedResult,
   }) {
     return GenerationConfig(
-      maxTokens: maxTokens ?? this.maxTokens,
       thinkingToken: thinkingToken ?? this.thinkingToken,
       chatReasoning: chatReasoning ?? this.chatReasoning,
       completionStopToken: completionStopToken ?? this.completionStopToken,
@@ -306,7 +316,7 @@ class GenerationConfig {
 
   @override
   String toString() {
-    return 'GenerateConfig{maxTokens: $maxTokens, chatReasoning: $chatReasoning, thinkingToken: $thinkingToken, completionStopToken: $completionStopToken, prompt: $prompt, returnWholeGeneratedResult: $returnWholeGeneratedResult}';
+    return 'GenerateConfig{chatReasoning: $chatReasoning, thinkingToken: $thinkingToken, completionStopToken: $completionStopToken, prompt: $prompt, returnWholeGeneratedResult: $returnWholeGeneratedResult}';
   }
 }
 
@@ -392,5 +402,17 @@ class TextToSpeechParam {
     required this.outputAudioPath,
     required this.inputAudioPath,
     this.inputAudioText,
+  });
+}
+
+class GenerationResponse {
+  final String text;
+  final int tokenCount;
+  final StopReason stopReason;
+
+  GenerationResponse({
+    required this.text,
+    required this.tokenCount,
+    required this.stopReason,
   });
 }

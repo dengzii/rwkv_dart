@@ -96,7 +96,7 @@ class RWKVIsolateProxy with _ProxyCombinedMixin {
     if (isFuture) {
       return events.firstWhere((e) => e.id == message.id).then((e) {
         if (e.error != '') {
-          throw Exception(e.error);
+          throw e.error;
         }
         return e.param;
       });
@@ -105,13 +105,13 @@ class RWKVIsolateProxy with _ProxyCombinedMixin {
       final ret = events.where((e) => e.id == message.id);
       return _awaitStream(ret);
     }
-    throw UnsupportedError('not supported, should be Future or Stream');
+    throw 'not supported, should be Future or Stream';
   }
 
   Stream _awaitStream(Stream<IsolateMessage> stream) async* {
     await for (var e in stream) {
       if (e.error != '') {
-        throw Exception(e.error);
+        throw e.error;
       }
       if (e.done) {
         break;
@@ -192,9 +192,7 @@ class _IsolatedRWKV with _ProxyCombinedMixin {
     } else {
       final handler = handlers[method];
       if (handler == null) {
-        throw Exception(
-          '😡 Unknown method: $method, did you register it in _ProxyCombinedMixin.getInterfaces()?',
-        );
+        throw 'Unknown isolate func: $method, did you register it in _ProxyCombinedMixin.getInterfaces()?';
       }
       res = param == null ? handler() : handler(param);
     }
@@ -271,8 +269,9 @@ mixin _ProxyCombinedMixin implements RWKV {
   }
 
   @override
-  Stream<String> chat(List<String> history) {
-    return callee?.chat(history) ?? _call(chat, history).cast<String>();
+  Stream<GenerationResponse> chat(List<String> history) {
+    return callee?.chat(history) ??
+        _call(chat, history).cast<GenerationResponse>();
   }
 
   @override

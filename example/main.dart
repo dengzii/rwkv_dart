@@ -13,28 +13,26 @@ void main() async {
   final rwkv = await RWKV.create();
   await rwkv.init(InitParam(dynamicLibDir: dynamicLibraryDir));
   await rwkv.loadModel(
-    LoadModelParam(
-      modelPath: modelPath,
-      tokenizerPath: tokenizerPath,
-      backend: Backend.webRwkv,
-    ),
+    LoadModelParam(modelPath: modelPath, tokenizerPath: tokenizerPath),
   );
-  await rwkv.setGenerationParam(GenerationParam.initial());
+  await rwkv.setGenerationConfig(
+    GenerationConfig.initial().copyWith(maxTokens: 100, completionStopToken: 0),
+  );
   // await rwkv.loadInitialState(state);
   var stream = rwkv.chat(['Who are you?']).asBroadcastStream();
   String resp = "";
   stream.listen(
     (e) {
-      resp += e;
+      resp += e.text;
       print('.');
     },
     onDone: () {
-      print('generation done');
+      print('done');
       print(resp);
     },
     onError: (e) {
-      print('generation error: $e');
+      print('error: $e');
     },
   );
-  await stream.last;
+  await stream.toList();
 }

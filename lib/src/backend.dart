@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
@@ -57,6 +58,18 @@ extension __ on ffi.Pointer<ffi.Char> {
   String toDartString() => cast<Utf8>().toDartString();
 }
 
+extension ___ on DecodeParam {
+  toNativeSamplerParam() => Struct.create<sampler_params>()
+    ..temperature = temperature
+    ..top_k = topK
+    ..top_p = topP;
+
+  toNativePenaltyParam() => Struct.create<penalty_params>()
+    ..presence_penalty = presencePenalty
+    ..frequency_penalty = frequencyPenalty
+    ..penalty_decay = penaltyDecay;
+}
+
 class RWKVBackend implements RWKV {
   final _utf8codec = Utf8Codec(allowMalformed: true);
 
@@ -73,6 +86,7 @@ class RWKVBackend implements RWKV {
   String? _qnnLibDir;
 
   GenerationConfig generationParam = GenerationConfig.initial();
+  DecodeParam decodeParam = DecodeParam.initial();
   GenerationState generationState = GenerationState.initial();
   StreamController<GenerationState> _controllerGenerationState =
       StreamController.broadcast();
@@ -193,7 +207,7 @@ class RWKVBackend implements RWKV {
       );
     }
     if (_modelId < 0) {
-      throw Exception('Failed to load model');
+      throw 'Failed to load model, $_modelId';
     }
 
     final ttsConfig = param.ttsModelConfig;
@@ -227,7 +241,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<String> chat(List<String> history) {
+  Stream<GenerationResponse> chat(List<String> history) {
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
 
     ffi.Pointer<ffi.Pointer<ffi.Char>> inputsPtr = calloc
@@ -244,7 +258,7 @@ class RWKVBackend implements RWKV {
       _modelId,
       inputsPtr,
       numInputs,
-      generationParam.maxTokens,
+      decodeParam.maxTokens,
       ffi.nullptr,
       generationParam.chatReasoning ? 1 : 0,
       generationParam.forceReasoning ? 1 : 0,
@@ -253,6 +267,10 @@ class RWKVBackend implements RWKV {
     _tryThrowErrorRetVal(retVal);
 
     final isResume = history.length % 2 == 0;
+
+    if (isResume && !generationParam.returnWholeGeneratedResult) {
+      _generationPosition = history.last.length;
+    }
     return _pollingGenerationResult(resume: isResume).cast();
   }
 
@@ -273,7 +291,7 @@ class RWKVBackend implements RWKV {
       'generate start, '
       'model_id=${_modelId}, '
       'prompt_len=${prompt.length}, '
-      'max_len=${generationParam.maxTokens}, '
+      'max_tokens=${decodeParam.maxTokens}, '
       'stop_token=${generationParam.completionStopToken}',
     );
 
@@ -284,7 +302,7 @@ class RWKVBackend implements RWKV {
       _handle,
       _modelId,
       prompt.toNativeChar(),
-      generationParam.maxTokens,
+      decodeParam.maxTokens,
       generationParam.completionStopToken,
       ffi.nullptr,
     );
@@ -301,6 +319,7 @@ class RWKVBackend implements RWKV {
   @override
   Future setDecodeParam(DecodeParam param) async {
     logd('set decode param: $param');
+    this.decodeParam = param;
     _rwkv.rwkvmobile_runtime_set_sampler_params(
       _handle,
       _modelId,
@@ -467,22 +486,31 @@ class RWKVBackend implements RWKV {
         .where((e) => type == GenerationType.TEXT ? e != '' : e != null);
   }
 
-  String _getGenerationTextBuffer() {
+  GenerationResponse _getGenerationTextBuffer() {
     final resp = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
       _handle,
       _modelId,
     );
     if (resp.length == 0) {
-      return '';
+      return GenerationResponse(
+        text: '',
+        tokenCount: 0,
+        stopReason: StopReason.none,
+      );
     }
-    final bytes = resp.content
-        .cast<ffi.Uint8>()
-        .asTypedList(resp.length)
-        .sublist(_generationPosition);
+    final bytes = resp.content.cast<ffi.Uint8>().asTypedList(resp.length);
+    String text = _utf8codec.decode(bytes).trimLeft();
+
     if (!generationParam.returnWholeGeneratedResult) {
-      _generationPosition = resp.length;
+      final append = text.substring(_generationPosition);
+      _generationPosition = text.length;
+      text = append;
     }
-    return _utf8codec.decode(bytes);
+    return GenerationResponse(
+      text: text,
+      tokenCount: -1,
+      stopReason: resp.eos_found == 1 ? StopReason.eos : StopReason.none,
+    );
   }
 
   dynamic _getGenerateAudioBuffer() {
