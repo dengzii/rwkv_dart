@@ -1,6 +1,12 @@
 import 'package:rwkv_dart/rwkv_dart.dart';
 
 class RWKVIsolateProxy implements RWKV {
+
+
+  RWKVIsolateProxy() {
+    throw 'isolate is unsupported in browser, use RWKV.create() instead.';
+  }
+
   @override
   Stream<GenerationResponse> chat(List<String> history) {
     throw UnimplementedError();
@@ -22,7 +28,7 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
-  Stream<String> generate(String prompt) {
+  Stream<GenerationResponse> generate(String prompt) {
     throw UnimplementedError();
   }
 

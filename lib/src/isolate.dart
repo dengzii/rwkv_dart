@@ -168,6 +168,7 @@ class _IsolatedRWKV with _ProxyCombinedMixin {
               'MethodInvocationError: method:${message.method}, param:${message.param}.';
           sendPort.send(message.copyWith(error: msg));
         } catch (e, s) {
+          loge(e);
           loge(s);
           sendPort.send(message.copyWith(error: e.toString()));
         }
@@ -280,11 +281,11 @@ mixin _ProxyCombinedMixin implements RWKV {
   }
 
   @override
-  Stream<String> generate(String prompt) {
+  Stream<GenerationResponse> generate(String prompt) {
     if (callee != null) {
       return callee!.generate(prompt);
     }
-    return _call(generate, prompt).cast<String>();
+    return _call(generate, prompt).cast<GenerationResponse>();
   }
 
   @override

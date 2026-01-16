@@ -286,7 +286,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<String> generate(String prompt) {
+  Stream<GenerationResponse> generate(String prompt) {
     logd(
       'generate start, '
       'model_id=${_modelId}, '
@@ -308,6 +308,9 @@ class RWKVBackend implements RWKV {
     );
     _tryThrowErrorRetVal(retVal);
 
+    if (generationParam.returnWholeGeneratedResult) {
+      _generationPosition = prompt.length;
+    }
     return _pollingGenerationResult().cast();
   }
 
@@ -483,7 +486,7 @@ class RWKVBackend implements RWKV {
           }
         })
         .takeWhile((_) => generationState.isGenerating)
-        .where((e) => type == GenerationType.TEXT ? e != '' : e != null);
+        .where((e) => type == GenerationType.TEXT ? e.text != '' : e != null);
   }
 
   GenerationResponse _getGenerationTextBuffer() {

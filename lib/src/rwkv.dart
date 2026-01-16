@@ -45,7 +45,7 @@ abstract class RWKV {
   /// Generate text from prompt.
   /// The generated text will be streamed,
   /// stream will be closed when generation is done.
-  Stream<String> generate(String prompt);
+  Stream<GenerationResponse> generate(String prompt);
 
   Stream<GenerationResponse> chat(List<String> history);
 

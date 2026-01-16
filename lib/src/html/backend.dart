@@ -2,8 +2,9 @@ import 'package:rwkv_dart/rwkv_dart.dart';
 
 class RWKVBackend implements RWKV {
   @override
-  Stream<GenerationResponse> chat(List<String> history) {
-    throw UnimplementedError();
+  Stream<GenerationResponse> chat(List<String> history) async* {
+    yield GenerationResponse(
+        text: 'Hello', tokenCount: 1, stopReason: StopReason.eos);
   }
 
   @override
@@ -22,7 +23,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<String> generate(String prompt) {
+  Stream<GenerationResponse> generate(String prompt) {
     throw UnimplementedError();
   }
 
@@ -32,8 +33,8 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future<GenerationState> getGenerationState() {
-    throw UnimplementedError();
+  Future<GenerationState> getGenerationState() async {
+    return GenerationState.initial();
   }
 
   @override
@@ -52,8 +53,8 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future<dynamic> init([InitParam? param]) {
-    throw UnimplementedError();
+  Future<dynamic> init([InitParam? param]) async {
+    //
   }
 
   @override
@@ -62,8 +63,8 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future<int> loadModel(LoadModelParam param) {
-    throw UnimplementedError();
+  Future<int> loadModel(LoadModelParam param) async {
+    return 0;
   }
 
   @override
@@ -77,8 +78,8 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future<dynamic> setDecodeParam(DecodeParam param) {
-    throw UnimplementedError();
+  Future<dynamic> setDecodeParam(DecodeParam param) async {
+
   }
 
   @override
