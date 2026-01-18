@@ -91,7 +91,7 @@ class RWKVBackend implements RWKV {
   StreamController<GenerationState> _controllerGenerationState =
       StreamController.broadcast();
 
-  RWKVBackend();
+  RWKVBackend([String? _]);
 
   ffi.DynamicLibrary _loadDynamicLib() {
     ffi.DynamicLibrary openDynamicLib(String file) =>

@@ -1,8 +1,6 @@
 import 'package:rwkv_dart/rwkv_dart.dart';
 
 class RWKVIsolateProxy implements RWKV {
-
-
   RWKVIsolateProxy() {
     throw 'isolate is unsupported in browser, use RWKV.create() instead.';
   }

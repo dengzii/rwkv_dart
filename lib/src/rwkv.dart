@@ -1,10 +1,10 @@
 import 'backend.dart'
     if (dart.library.io) 'package:rwkv_dart/src/backend.dart'
-    if (dart.library.html) 'package:rwkv_dart/src/html/backend.dart';
+    if (dart.library.html) 'package:rwkv_dart/src/web/backend.dart';
 
 import 'isolate.dart'
     if (dart.library.io) 'package:rwkv_dart/src/isolate.dart'
-    if (dart.library.html) 'package:rwkv_dart/src/html/isolate.dart';
+    if (dart.library.html) 'package:rwkv_dart/src/web/isolate.dart';
 
 enum RWKVLogLevel { verbose, info, debug, warning, error }
 
@@ -18,6 +18,9 @@ class RuntimeError {
 abstract class RWKV {
   /// Create a RWKV ffi instance.
   factory RWKV.create() => RWKVBackend();
+
+  /// Access RWKV via network
+  factory RWKV.network(String baseUrl) => RWKVBackend(baseUrl);
 
   /// Create a RWKV instance run in the isolate.
   factory RWKV.isolated() => RWKVIsolateProxy();
@@ -86,7 +89,7 @@ enum StopReason {
   // canceled by user
   canceled,
   error,
-  timeout;
+  timeout,
 }
 
 enum Backend {

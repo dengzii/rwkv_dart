@@ -1,10 +1,36 @@
+import 'package:dio/dio.dart';
 import 'package:rwkv_dart/rwkv_dart.dart';
 
-class RWKVBackend implements RWKV {
+class RwkvServiceClient {
+  static final Dio _dio = Dio();
+
+  static Future init({required String url, required String accessKey}) async {
+    _dio.options.baseUrl = url;
+    _dio.options.headers['X-Access-Key'] = accessKey;
+  }
+
+  static Future status() async {
+    final response = await _dio.get('/status');
+    return response.data;
+  }
+
+  static Future<RWKV> create() async {
+    return RwkvApiClient('');
+  }
+}
+
+class RwkvApiClient implements RWKV {
+  final String url;
+
+  RwkvApiClient(this.url);
+
   @override
   Stream<GenerationResponse> chat(List<String> history) async* {
     yield GenerationResponse(
-        text: 'Hello', tokenCount: 1, stopReason: StopReason.eos);
+      text: 'Hello',
+      tokenCount: 1,
+      stopReason: StopReason.eos,
+    );
   }
 
   @override
@@ -28,8 +54,8 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<GenerationState> generationStateStream() {
-    throw UnimplementedError();
+  Stream<GenerationState> generationStateStream() async* {
+    //
   }
 
   @override
@@ -78,9 +104,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future<dynamic> setDecodeParam(DecodeParam param) async {
-
-  }
+  Future<dynamic> setDecodeParam(DecodeParam param) async {}
 
   @override
   Future<dynamic> setGenerationConfig(GenerationConfig param) {
