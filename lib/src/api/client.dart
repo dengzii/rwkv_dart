@@ -1,21 +1,56 @@
 import 'package:dio/dio.dart';
 import 'package:rwkv_dart/rwkv_dart.dart';
+import 'package:rwkv_dart/src/api/model_base_info.dart';
+import 'package:rwkv_dart/src/api/service_status.dart';
+
+class LoadedModel {
+  final ModelBaseInfo info;
+  final RWKV rwkv;
+
+  LoadedModel({required this.info, required this.rwkv});
+}
 
 class RwkvServiceClient {
-  static final Dio _dio = Dio();
+  final String name;
+  final String id;
+  final String url;
+  final Dio _dio = Dio();
 
-  static Future init({required String url, required String accessKey}) async {
+  RwkvServiceClient({
+    required this.name,
+    required this.id,
+    required this.url,
+    String accessKey = '',
+  }) {
     _dio.options.baseUrl = url;
     _dio.options.headers['X-Access-Key'] = accessKey;
   }
 
-  static Future status() async {
+  Future<ServiceStatus> status() async {
     final response = await _dio.get('/status');
-    return response.data;
+    return ServiceStatus.fromJson(response.data);
   }
 
-  static Future<RWKV> create() async {
-    return RwkvApiClient('');
+  Future<LoadedModel> create(String modelId) async {
+    final response = await _dio.get(
+      '/create',
+      queryParameters: {'model_id': modelId},
+    );
+    final port = response.data['port'] as int;
+    final info = ModelBaseInfo.fromJson(response.data['model']);
+    final uri = Uri.parse(url).replace(port: port).replace(path: '/');
+    return LoadedModel(info: info, rwkv: RwkvApiClient(uri.toString()));
+  }
+
+  Future<LoadedModel> connect(String instanceId) async {
+    final response = await _dio.get(
+      '/connect',
+      queryParameters: {'instanceId': instanceId},
+    );
+    final port = response.data['port'] as int;
+    final info = ModelBaseInfo.fromJson(response.data['model']);
+    final uri = Uri.parse(url).replace(port: port).replace(path: '/');
+    return LoadedModel(info: info, rwkv: RwkvApiClient(uri.toString()));
   }
 }
 
@@ -27,7 +62,7 @@ class RwkvApiClient implements RWKV {
   @override
   Stream<GenerationResponse> chat(List<String> history) async* {
     yield GenerationResponse(
-      text: 'Hello',
+      text: 'Hello1',
       tokenCount: 1,
       stopReason: StopReason.eos,
     );
