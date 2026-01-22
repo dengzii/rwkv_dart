@@ -6,7 +6,7 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
-  Stream<GenerationResponse> chat(List<String> history) {
+  Stream<GenerationResponse> chat(ChatParam param) {
     throw UnimplementedError();
   }
 
@@ -26,7 +26,7 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
-  Stream<GenerationResponse> generate(String prompt) {
+  Stream<GenerationResponse> generate(GenerationParam param) {
     throw UnimplementedError();
   }
 

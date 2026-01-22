@@ -1,4 +1,4 @@
-import 'package:rwkv_dart/src/api/model_base_info.dart';
+import 'package:rwkv_dart/src/api/bean/model_base_info.dart';
 
 import 'models_bean.dart';
 
@@ -9,7 +9,7 @@ class ServiceStatus {
   final String serviceId;
   final String id;
   final num uptime;
-  final List<ModelsBean> models;
+  final List<ModelBean> models;
   final List<ModelBaseInfo> loadedModels;
 
   ServiceStatus({
@@ -32,7 +32,7 @@ class ServiceStatus {
       uptime: json['uptime'] ?? 0,
       models:
           (json['models'] as Iterable?)
-              ?.map((e) => ModelsBean.fromJson(e))
+              ?.map((e) => ModelBean.fromJson(e))
               .toList() ??
           [],
       loadedModels:

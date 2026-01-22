@@ -1,5 +1,5 @@
-import 'package:rwkv_dart/src/api/client.dart';
+import 'package:rwkv_dart/src/api/client/open_ai.dart';
 
-class RWKVBackend extends RwkvApiClient {
-  RWKVBackend(String url) : super(url);
+class RWKVBackend extends OpenAiApiClient {
+  RWKVBackend([String? url]) : super(url!);
 }

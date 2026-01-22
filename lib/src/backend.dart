@@ -241,7 +241,9 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<GenerationResponse> chat(List<String> history) {
+  Stream<GenerationResponse> chat(ChatParam param) {
+    final history = param.messages;
+
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
 
     ffi.Pointer<ffi.Pointer<ffi.Char>> inputsPtr = calloc
@@ -286,7 +288,8 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<GenerationResponse> generate(String prompt) {
+  Stream<GenerationResponse> generate(GenerationParam param) {
+    final prompt = param.prompt;
     logd(
       'generate start, '
       'model_id=${_modelId}, '
@@ -302,7 +305,7 @@ class RWKVBackend implements RWKV {
       _handle,
       _modelId,
       prompt.toNativeChar(),
-      decodeParam.maxTokens,
+      param.maxTokens ?? decodeParam.maxTokens,
       generationParam.completionStopToken,
       ffi.nullptr,
     );

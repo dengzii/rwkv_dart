@@ -270,9 +270,9 @@ mixin _ProxyCombinedMixin implements RWKV {
   }
 
   @override
-  Stream<GenerationResponse> chat(List<String> history) {
-    return callee?.chat(history) ??
-        _call(chat, history).cast<GenerationResponse>();
+  Stream<GenerationResponse> chat(ChatParam parma) {
+    return callee?.chat(parma) ??
+        _call(chat, parma).cast<GenerationResponse>();
   }
 
   @override
@@ -281,11 +281,11 @@ mixin _ProxyCombinedMixin implements RWKV {
   }
 
   @override
-  Stream<GenerationResponse> generate(String prompt) {
+  Stream<GenerationResponse> generate(GenerationParam param) {
     if (callee != null) {
-      return callee!.generate(prompt);
+      return callee!.generate(param);
     }
-    return _call(generate, prompt).cast<GenerationResponse>();
+    return _call(generate, param).cast<GenerationResponse>();
   }
 
   @override

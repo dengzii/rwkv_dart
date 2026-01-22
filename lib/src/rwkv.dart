@@ -1,7 +1,6 @@
 import 'backend.dart'
     if (dart.library.io) 'package:rwkv_dart/src/backend.dart'
     if (dart.library.html) 'package:rwkv_dart/src/web/backend.dart';
-
 import 'isolate.dart'
     if (dart.library.io) 'package:rwkv_dart/src/isolate.dart'
     if (dart.library.html) 'package:rwkv_dart/src/web/isolate.dart';
@@ -48,9 +47,9 @@ abstract class RWKV {
   /// Generate text from prompt.
   /// The generated text will be streamed,
   /// stream will be closed when generation is done.
-  Stream<GenerationResponse> generate(String prompt);
+  Stream<GenerationResponse> generate(GenerationParam param);
 
-  Stream<GenerationResponse> chat(List<String> history);
+  Stream<GenerationResponse> chat(ChatParam param);
 
   Future<GenerationState> getGenerationState();
 
@@ -412,10 +411,58 @@ class GenerationResponse {
   final String text;
   final int tokenCount;
   final StopReason stopReason;
+  final List<String>? choices;
+  final List<StopReason>? stopReasons;
 
   GenerationResponse({
     required this.text,
-    required this.tokenCount,
-    required this.stopReason,
+    this.tokenCount = -1,
+    this.stopReason = StopReason.none,
+    this.choices,
+    this.stopReasons,
+  });
+}
+
+class GenerationParam {
+  final String prompt;
+
+  final String? model;
+  final int? maxTokens;
+  final int? maxCompletionTokens;
+  final String? reasoning;
+  final List<int>? stopSequence;
+  final Map<String, dynamic>? additional;
+
+  GenerationParam({
+    required this.prompt,
+    this.model,
+    this.maxTokens,
+    this.maxCompletionTokens,
+    this.reasoning,
+    this.stopSequence,
+    this.additional,
+  });
+}
+
+class ChatParam {
+  final List<String> messages;
+  final List<String>? batch;
+
+  final String? model;
+  final int? maxCompletionTokens;
+  final int? maxTokens;
+  final String? reasoning;
+  final List<int>? stopSequence;
+  final Map<String, dynamic>? additional;
+
+  ChatParam({
+    required this.messages,
+    this.batch,
+    this.model,
+    this.reasoning,
+    this.additional,
+    this.stopSequence,
+    this.maxTokens,
+    this.maxCompletionTokens,
   });
 }

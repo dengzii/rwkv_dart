@@ -21,6 +21,7 @@ void _listenToLogs() {
   }
 
   _loggerInitialized = true;
+  Logger.root.level = Level.ALL;
   Logger.root.clearListeners();
   Logger.root.onRecord.listen((record) {
     final time =
