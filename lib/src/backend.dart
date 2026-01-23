@@ -241,7 +241,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<GenerationResponse> chat(ChatParam param) {
+  Stream<GenerationResponse> chat(ChatParam param) async* {
     final history = param.messages;
 
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
@@ -254,6 +254,16 @@ class RWKVBackend implements RWKV {
     final numInputs = history.length;
 
     _checkGenerationState();
+
+    if (param.maxTokens != null) {
+      decodeParam = decodeParam.copyWith(maxTokens: param.maxTokens);
+    }
+
+    if (param.system != null) {
+      await setGenerationConfig(
+        generationParam.copyWith(prompt: 'System: ${param.system?.trim()}'),
+      );
+    }
 
     final retVal = _rwkv.rwkvmobile_runtime_eval_chat_with_history_async(
       _handle,
@@ -273,7 +283,7 @@ class RWKVBackend implements RWKV {
     if (isResume && !generationParam.returnWholeGeneratedResult) {
       _generationPosition = history.last.length;
     }
-    return _pollingGenerationResult(resume: isResume).cast();
+    yield* _pollingGenerationResult(resume: isResume).cast();
   }
 
   @override

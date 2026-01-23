@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/bean/openai/choices_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/chunk_data_bean.dart';
+import 'package:rwkv_dart/src/api/bean/openai/completion_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/delta_bean.dart';
 import 'package:rwkv_dart/src/api/common/id.dart';
 import 'package:rwkv_dart/src/api/common/sse.dart';
@@ -51,6 +52,9 @@ class RwkvService {
             case 'v1/completions':
             case 'v1/chat/completions':
               return _SSE().handle(request);
+            case 'v1/responses':
+              print(await request.readAsString());
+              return Response.ok('');
             default:
               return Response.notFound('Not found');
           }
@@ -122,24 +126,31 @@ class _SSE extends SseHandler {
     }
 
     final json = jsonDecode(body);
-    final model = json['model'] as String;
-    final messages = json['messages'] as Iterable?;
-    final prompt = json['prompt'] as String?;
+    final completion = CompletionBean.fromJson(json);
 
-    if (messages != null && messages.isNotEmpty) {
+    if (completion.messages.isNotEmpty) {
+      final ms = completion.messages.toList();
+      final system = ms.where((e) => e.role == 'system').firstOrNull;
+      if (system != null) {
+        ms.remove(system);
+      }
       chatParam = ChatParam(
-        model: model,
-        messages: [for (final item in messages) item['content']],
+        model: completion.model,
+        system: system?.content,
+        messages: ms.map((e) => e.content).toList(),
       );
-    } else if (prompt != null && prompt.isNotEmpty) {
-      genParam = GenerationParam(model: model, prompt: prompt);
+    } else if (completion.prompt != null) {
+      genParam = GenerationParam(
+        model: completion.model,
+        prompt: completion.prompt!,
+      );
     }
     if (chatParam == null && genParam == null) {
       throw 'invalid request';
     }
-    instance = RwkvService._instances[model]!;
+    instance = RwkvService._instances[completion.model]!;
     _ready = true;
-    logd('sse connection ready, $id');
+    logd('sse connection ready, $id\n$body');
   }
 
   @override

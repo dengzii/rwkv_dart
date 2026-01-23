@@ -454,6 +454,7 @@ class ChatParam {
   final String? reasoning;
   final List<int>? stopSequence;
   final Map<String, dynamic>? additional;
+  final String? system;
 
   ChatParam({
     required this.messages,
@@ -464,5 +465,6 @@ class ChatParam {
     this.stopSequence,
     this.maxTokens,
     this.maxCompletionTokens,
+    this.system,
   });
 }

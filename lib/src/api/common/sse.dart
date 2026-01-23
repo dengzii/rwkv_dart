@@ -14,7 +14,7 @@ class SseEvent {
   SseEvent._({required this.event, required this.data});
 
   factory SseEvent.done() {
-    return SseEvent._(event: 'DONE', data: '');
+    return SseEvent._(event: '', data: '[DONE]');
   }
 
   factory SseEvent.data(String data) {
@@ -37,7 +37,7 @@ class SseEvent {
     if (event == '') {
       return 'data: ${data}';
     }
-    return 'data: [$event] ${data}'.trim();
+    return 'event: $event';
   }
 }
 
