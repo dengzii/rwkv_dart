@@ -38,6 +38,10 @@ class RwkvService {
         .addMiddleware(logRequests())
         .addMiddleware(cross())
         .addHandler((request) async {
+          if (request.method == 'OPTIONS') {
+            return Response.ok('');
+          }
+
           switch (request.url.path) {
             case 'health':
               return Response.ok('rwkv');
@@ -78,16 +82,16 @@ Middleware cross({void Function(String message, bool isError)? logger}) =>
     (innerHandler) {
       return (request) async {
         Response resp = await innerHandler(request);
+        final hasType = resp.headers.containsKey(HttpHeaders.contentTypeHeader);
         resp = resp.change(
           headers: {
-            ...resp.headers,
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
             'Access-Control-Allow-Headers':
                 'Content-Type, Authorization, x-access-key, Cache-Control',
             'Access-Control-Max-Age': '3600',
             'Access-Control-Allow-Credentials': 'true',
-            'Content-Type': 'application/json',
+            if (!hasType) 'Content-Type': 'application/json',
           },
         );
         return resp;
@@ -100,6 +104,7 @@ class _SSE extends SseHandler {
   GenerationParam? genParam;
 
   bool _closeNormal = false;
+  bool _ready = false;
 
   _SSE() : super(id: 'chatcmpl-${generateId()}');
 
@@ -108,6 +113,14 @@ class _SSE extends SseHandler {
     super.onConnectionReady(req);
 
     final body = await req.readAsString();
+
+    if (body.isEmpty) {
+      logw('request body is empty');
+      write(SseEvent.error('body is empty'));
+      close();
+      return;
+    }
+
     final json = jsonDecode(body);
     final model = json['model'] as String;
     final messages = json['messages'] as Iterable?;
@@ -121,14 +134,18 @@ class _SSE extends SseHandler {
     } else if (prompt != null && prompt.isNotEmpty) {
       genParam = GenerationParam(model: model, prompt: prompt);
     }
+    if (chatParam == null && genParam == null) {
+      throw 'invalid request';
+    }
     instance = RwkvService._instances[model]!;
+    _ready = true;
     logd('sse connection ready, $id');
   }
 
   @override
   void onConnectionClosed() {
     super.onConnectionClosed();
-    if (!_closeNormal) {
+    if (!_closeNormal && _ready) {
       logd('close unexcepted');
       instance.rwkv.stopGenerate();
     }
@@ -138,10 +155,13 @@ class _SSE extends SseHandler {
   @override
   Stream<SseEvent> emitting(Request req) async* {
     final created = (DateTime.now().millisecondsSinceEpoch / 1000).toInt();
-
-    logd('handle chat: ${instance.info.id}, $id');
-
     final isChat = chatParam != null;
+    logd('handle ${isChat ? 'chat' : 'gen'}: ${instance.info.id}, $id');
+
+    if (!_ready) {
+      yield SseEvent.error('internal server error, NOT READY.');
+      return;
+    }
 
     final object = !isChat ? 'text_completion' : 'chat.completion.chunk';
 

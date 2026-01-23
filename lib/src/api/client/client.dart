@@ -46,10 +46,10 @@ class RwkvServiceClient {
         .timeout(Duration(seconds: 1))
         .catchError((e, s) async => null);
 
-    ServiceStatus res;
     if (rwkv == 'rwkv') {
-      final resp = await _dio.get('/status');
-      res = ServiceStatus.fromJson(resp.data);
+      final resp = await _dio.get('/v1/models');
+      final list = resp.data['data'] as Iterable? ?? [];
+      models = list.map(ModelBean.fromJson).toList();
       _loadedModels = [
         for (final m in models)
           LoadedModel(
@@ -82,18 +82,17 @@ class RwkvServiceClient {
             rwkv: OpenAiApiClient(url, apiKey: ''),
           ),
       ];
-      res = ServiceStatus(
-        hostname: '',
-        system: '',
-        serviceId: url,
-        id: id,
-        uptime: 0,
-        models: models,
-        loadedModels: _loadedModels.map((e) => e.info).toList(),
-      );
       _serviceType = ServiceType.openai;
     }
-    return res;
+    return ServiceStatus(
+      hostname: '',
+      system: '',
+      serviceId: url,
+      id: id,
+      uptime: 0,
+      models: models,
+      loadedModels: _loadedModels.map((e) => e.info).toList(),
+    );
   }
 
   Future<LoadedModel> create(String modelId) async {

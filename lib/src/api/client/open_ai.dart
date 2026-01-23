@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
+import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
+import 'package:dio/dio.dart' hide HttpClientAdapter;
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/bean/openai/chunk_data_bean.dart';
-import 'package:rwkv_dart/src/api/common/sse.dart';
 import 'package:rwkv_dart/src/logger.dart';
+
+import 'http_client.dart'
+    if (dart.library.js_interop) 'package:rwkv_dart/src/web/http_client.dart'
+    if (dart.library.html) 'package:rwkv_dart/src/web/http_client.dart'
+    as adapter;
 
 class OpenAiApiClient implements RWKV {
   final String url;
@@ -29,6 +33,7 @@ class OpenAiApiClient implements RWKV {
   OpenAiApiClient(this.url, {this.apiKey = ''}) {
     _dio.options.baseUrl = url;
     _dio.options.headers['Authorization'] = 'Bearer ${apiKey}';
+    _dio.httpClientAdapter = adapter.createAdapter();
     logd('rwkv client created: ${url}');
   }
 
@@ -90,12 +95,11 @@ class OpenAiApiClient implements RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    final stream = body.stream.map(SseEvent.decode);
 
     final transformer = StreamTransformer.fromBind(_sseEventTransformer);
 
     try {
-      yield* stream.transform(transformer);
+      yield* body.stream.transform(transformer);
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(text: '', stopReason: StopReason.canceled);
@@ -130,6 +134,7 @@ class OpenAiApiClient implements RWKV {
         data: data,
         options: Options(
           responseType: ResponseType.stream,
+          persistentConnection: true,
           headers: {'Content-Type': 'application/json'},
         ),
       );
@@ -141,11 +146,10 @@ class OpenAiApiClient implements RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    final stream = body.stream.map(SseEvent.decode);
     final transformer = StreamTransformer.fromBind(_sseEventTransformer);
 
     try {
-      yield* stream.transform(transformer);
+      yield* body.stream.transform(transformer);
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(text: '', stopReason: StopReason.canceled);
@@ -261,11 +265,38 @@ class OpenAiApiClient implements RWKV {
   }
 }
 
+StreamTransformer<Uint8List, String> unit8ListToString =
+    StreamTransformer.fromHandlers(
+      handleData: (data, sink) {
+        sink.add(utf8.decode(data));
+      },
+    );
+
 Stream<GenerationResponse> _sseEventTransformer(
-  Stream<SseEvent> stream,
+  Stream<Uint8List> stream,
 ) async* {
-  await for (final event in stream) {
-    if (event.event == 'DONE') {
+  await for (final line
+      in stream.transform(unit8ListToString).transform(LineSplitter())) {
+    if (line.isEmpty) {
+      continue;
+    }
+    String event = '';
+    String data = '';
+
+    final index = line.indexOf(': ');
+    if (index != -1) {
+      event = line.substring(0, index).trim();
+      data = line.substring(index + 1).trim();
+    } else {
+      logw('unexpected line: $line');
+      continue;
+    }
+    if (event == 'data') {
+      //
+    } else {
+      continue;
+    }
+    if (data == '[DONE]') {
       yield GenerationResponse(
         text: '',
         tokenCount: -1,
@@ -273,11 +304,11 @@ Stream<GenerationResponse> _sseEventTransformer(
       );
       break;
     }
-    if (event.event == 'PING') {
-      logd('PING');
+    if (data == '[PING]') {
+      logd('[PING]');
       continue;
     }
-    if (event.event == 'ERROR') {
+    if (data == '[ERROR]') {
       yield GenerationResponse(
         text: '',
         tokenCount: -1,
@@ -285,13 +316,13 @@ Stream<GenerationResponse> _sseEventTransformer(
       );
       break;
     }
-    if (event.data.trim().isEmpty) {
+    if (data.trim().isEmpty) {
       continue;
     }
-    final map = jsonDecode(event.data.trim());
-    final data = ChunkDataBean.fromJson(map);
+    final map = jsonDecode(data.trim());
+    final bean = ChunkDataBean.fromJson(map);
 
-    final choose = data.choices.first;
+    final choose = bean.choices.first;
     final text = choose.delta != null ? choose.delta?.content : choose.text;
     yield GenerationResponse(
       text: text ?? '',

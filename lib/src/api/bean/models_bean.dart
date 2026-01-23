@@ -1,5 +1,5 @@
 @pragma("json_id:d45e6696de7e46b8e8f7db863767321d")
-class ModelsBean {
+class ModelBean {
   final String path;
   final int fileSize;
   final String name;
@@ -10,8 +10,9 @@ class ModelsBean {
   final num updatedAt;
   final List<String> groups;
   final List<String> tags;
+  final String tokenizer;
 
-  ModelsBean({
+  ModelBean({
     required this.path,
     required this.fileSize,
     required this.name,
@@ -22,11 +23,12 @@ class ModelsBean {
     required this.updatedAt,
     required this.groups,
     required this.tags,
+    required this.tokenizer,
   });
 
-  factory ModelsBean.fromJson(dynamic data) {
+  factory ModelBean.fromJson(dynamic data) {
     final json = data as Map<String, dynamic>;
-    return ModelsBean(
+    return ModelBean(
       path: json['path'] ?? '',
       fileSize: json['fileSize'] ?? 0,
       name: json['name'] ?? '',
@@ -38,6 +40,7 @@ class ModelsBean {
       groups: (json['groups'] as Iterable?)?.map((e) => e as String).toList() ??
           [],
       tags: (json['tags'] as Iterable?)?.map((e) => e as String).toList() ?? [],
+      tokenizer: json['tokenizer'] ?? '',
     );
   }
 
@@ -53,6 +56,7 @@ class ModelsBean {
     data['updatedAt'] = updatedAt;
     data['groups'] = groups;
     data['tags'] = tags;
+    data['tokenizer'] = tokenizer;
     return data;
   }
 

@@ -9,6 +9,8 @@ class SseEvent {
   final String event;
   final String data;
 
+  static const _lineSeparator = '\n\n';
+
   SseEvent._({required this.event, required this.data});
 
   factory SseEvent.done() {
@@ -27,33 +29,8 @@ class SseEvent {
     return SseEvent._(event: 'PING', data: '');
   }
 
-  factory SseEvent.lineSeparator() {
-    return SseEvent._(event: '\n\n', data: '');
-  }
-
-  factory SseEvent.decode(List<int> raw) {
-    if (raw.isEmpty) {
-      return SseEvent._(event: '', data: '');
-    }
-    String data = utf8.decode(raw);
-
-    if (data.startsWith('data: ')) {
-      data = data.substring(6);
-    }
-    String event = '';
-    if (data.startsWith('[')) {
-      final end = data.indexOf(']');
-      event = data.substring(1, end);
-      data = data.substring(end + 1).trim();
-    }
-    return SseEvent._(event: event, data: data);
-  }
-
   List<int> encode() {
-    if (event == '\n\n') {
-      return utf8.encode('\n\n');
-    }
-    return utf8.encode(encodeString());
+    return utf8.encode(encodeString() + _lineSeparator);
   }
 
   String encodeString() {
@@ -83,7 +60,6 @@ abstract class SseHandler {
   void write(SseEvent event) {
     logi('sse-write($id)>${event.event} ${event.data}');
     _controller.add(event);
-    _controller.add(SseEvent.lineSeparator());
   }
 
   Stream<SseEvent> emitting(Request req);

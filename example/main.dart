@@ -19,7 +19,9 @@ void main() async {
     GenerationConfig.initial().copyWith(maxTokens: 100, completionStopToken: 0),
   );
   // await rwkv.loadInitialState(state);
-  var stream = rwkv.chat(['Who are you?']).asBroadcastStream();
+  var stream = rwkv
+      .chat(ChatParam(messages: ['你是谁']))
+      .asBroadcastStream();
   String resp = "";
   stream.listen(
     (e) {
