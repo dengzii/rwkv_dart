@@ -46,9 +46,6 @@ class RwkvServiceClient {
         .timeout(Duration(seconds: 1))
         .catchError((e, s) async => null);
 
-    final rr = await _dio.post('/v1/responses');
-    print(rr.data);
-
     if (rwkv == 'rwkv') {
       final resp = await _dio.get('/v1/models');
       final list = resp.data['data'] as Iterable? ?? [];

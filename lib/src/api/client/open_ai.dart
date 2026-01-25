@@ -34,7 +34,6 @@ class OpenAiApiClient implements RWKV {
     _dio.options.baseUrl = url;
     _dio.options.headers['Authorization'] = 'Bearer ${apiKey}';
     _dio.httpClientAdapter = adapter.createAdapter();
-    logd('rwkv client created: ${url}');
   }
 
   Future getModelList() async {
