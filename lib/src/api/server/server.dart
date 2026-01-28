@@ -30,9 +30,17 @@ class RwkvService {
     int port = 8000,
     required String accessKey,
     String modelListPath = '',
+    Map<ModelBean, RWKV> instances = const {},
   }) async {
     _modelListPath = modelListPath;
 
+    _instances.clear();
+    for (final entry in instances.entries) {
+      _instances[entry.key.id] = _RWKVInstance(
+        rwkv: entry.value,
+        info: entry.key,
+      );
+    }
     await _launchInstance();
 
     var handler = const Pipeline()
