@@ -8,6 +8,7 @@ class CompletionBean {
   final List<MessageBean> messages;
   final StreamOptionsBean? streamOptions;
   final String? prompt;
+  final String? reasoningEffort;
 
   CompletionBean({
     required this.stream,
@@ -15,6 +16,7 @@ class CompletionBean {
     required this.messages,
     this.streamOptions,
     this.prompt,
+    this.reasoningEffort,
   });
 
   factory CompletionBean.fromJson(dynamic data) {
@@ -31,6 +33,7 @@ class CompletionBean {
           ? StreamOptionsBean.fromJson(json['stream_options'])
           : null,
       prompt: data['prompt'],
+      reasoningEffort: data['reasoning_effort']
     );
   }
 
@@ -41,6 +44,7 @@ class CompletionBean {
     data['messages'] = messages.map((e) => e.toJson()).toList();
     data['stream_options'] = streamOptions?.toJson();
     data['prompt'] = prompt;
+    data['reasoning_effort'] = reasoningEffort;
     return data;
   }
 }

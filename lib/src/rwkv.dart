@@ -89,6 +89,7 @@ enum StopReason {
   canceled,
   error,
   timeout,
+  unknown,
 }
 
 enum Backend {
@@ -210,7 +211,7 @@ class DecodeParam {
       presencePenalty: 0.5,
       frequencyPenalty: 0.5,
       penaltyDecay: 0.996,
-      maxTokens: 1000,
+      maxTokens: 2000,
     );
   }
 
@@ -236,18 +237,52 @@ class DecodeParam {
 
   @override
   String toString() {
-    return 'DecodeParam{temperature: $temperature, topK: $topK, topP: $topP, presencePenalty: $presencePenalty, frequencyPenalty: $frequencyPenalty, penaltyDecay: $penaltyDecay}';
+    return toMap().toString();
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'temperature': temperature,
+      'topK': topK,
+      'topP': topP,
+      'presencePenalty': presencePenalty,
+      'frequencyPenalty': frequencyPenalty,
+      'penaltyDecay': penaltyDecay,
+      'maxTokens': maxTokens,
+    };
+  }
+
+  factory DecodeParam.fromMap(Map<String, dynamic> map) {
+    return DecodeParam(
+      temperature: map['temperature'] as double,
+      topK: map['topK'] as int,
+      topP: map['topP'] as double,
+      presencePenalty: map['presencePenalty'] as double,
+      frequencyPenalty: map['frequencyPenalty'] as double,
+      penaltyDecay: map['penaltyDecay'] as double,
+      maxTokens: map['maxTokens'] as int,
+    );
+  }
+}
+
+enum ReasoningEffort {
+  none,
+  mini,
+  // maybe skip reasoning, decide by model raw output
+  low,
+  medium,
+  // force reasoning
+  high,
+  xhig,
 }
 
 class GenerationConfig {
   static const thinkingTokenNone = "";
   static const thinkingTokenFree = r"<think>";
 
-  final bool chatReasoning;
-  final bool forceReasoning;
   final bool addGenerationPrompt;
 
+  final ReasoningEffort reasoningEffort;
   final int completionStopToken;
 
   // apply to the start of the prompt
@@ -274,11 +309,10 @@ class GenerationConfig {
 
   GenerationConfig({
     required this.thinkingToken,
-    required this.chatReasoning,
     required this.completionStopToken,
     required this.prompt,
     required this.returnWholeGeneratedResult,
-    this.forceReasoning = false,
+    required this.reasoningEffort,
     this.addGenerationPrompt = false,
     this.tokenBanned = const [],
     this.spaceAfterRole = true,
@@ -291,7 +325,7 @@ class GenerationConfig {
   factory GenerationConfig.initial() {
     return GenerationConfig(
       thinkingToken: thinkingTokenNone,
-      chatReasoning: false,
+      reasoningEffort: ReasoningEffort.none,
       completionStopToken: 0,
       prompt: "",
       returnWholeGeneratedResult: false,
@@ -300,25 +334,25 @@ class GenerationConfig {
 
   GenerationConfig copyWith({
     int? maxTokens,
-    bool? chatReasoning,
     String? thinkingToken,
     int? completionStopToken,
     String? prompt,
     bool? returnWholeGeneratedResult,
+    ReasoningEffort? reasoningEffort,
   }) {
     return GenerationConfig(
       thinkingToken: thinkingToken ?? this.thinkingToken,
-      chatReasoning: chatReasoning ?? this.chatReasoning,
       completionStopToken: completionStopToken ?? this.completionStopToken,
       prompt: prompt ?? this.prompt,
       returnWholeGeneratedResult:
           returnWholeGeneratedResult ?? this.returnWholeGeneratedResult,
+      reasoningEffort: reasoningEffort ?? this.reasoningEffort,
     );
   }
 
   @override
   String toString() {
-    return 'GenerateConfig{chatReasoning: $chatReasoning, thinkingToken: $thinkingToken, completionStopToken: $completionStopToken, prompt: $prompt, returnWholeGeneratedResult: $returnWholeGeneratedResult}';
+    return 'GenerationConfig{reasoningEffort: $reasoningEffort, completionStopToken: $completionStopToken, prompt: $prompt, thinkingToken: $thinkingToken, eosToken: $eosToken, bosToken: $bosToken, tokenBanned: $tokenBanned, returnWholeGeneratedResult: $returnWholeGeneratedResult, userRole: $userRole, assistantRole: $assistantRole, spaceAfterRole: $spaceAfterRole}, addGenerationPrompt: $addGenerationPrompt';
   }
 }
 
@@ -451,7 +485,7 @@ class ChatParam {
   final String? model;
   final int? maxCompletionTokens;
   final int? maxTokens;
-  final String? reasoning;
+  final ReasoningEffort? reasoning;
   final List<int>? stopSequence;
   final Map<String, dynamic>? additional;
   final String? system;

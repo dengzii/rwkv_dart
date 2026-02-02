@@ -54,6 +54,8 @@ class OpenAiApiClient implements RWKV {
 
     final history = param.messages;
 
+    final reasoning = _config.reasoningEffort;
+
     final data = {
       'model': param.model!,
       'stream': true,
@@ -64,7 +66,9 @@ class OpenAiApiClient implements RWKV {
       'presence_penalty': _decodeParam.presencePenalty,
       'stop': param.stopSequence,
       'penalty_decay': _decodeParam.penaltyDecay,
+      'reasoning_effort': reasoning,
       'messages': [
+        if (_config.prompt.isNotEmpty) {'system': _config.prompt},
         for (final (index, message) in history.indexed)
           {
             'role': index % 2 == 0
@@ -228,8 +232,8 @@ class OpenAiApiClient implements RWKV {
   Future<dynamic> setDecodeParam(DecodeParam param) async {}
 
   @override
-  Future<dynamic> setGenerationConfig(GenerationConfig param) {
-    throw UnimplementedError();
+  Future<dynamic> setGenerationConfig(GenerationConfig param) async {
+    _config = param;
   }
 
   @override

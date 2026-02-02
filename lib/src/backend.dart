@@ -265,6 +265,26 @@ class RWKVBackend implements RWKV {
       );
     }
 
+    bool reasoning;
+    bool force;
+    switch (param.reasoning ?? generationParam.reasoningEffort) {
+      case ReasoningEffort.none:
+        reasoning = false;
+        force = false;
+        break;
+      case ReasoningEffort.mini:
+      case ReasoningEffort.low:
+      case ReasoningEffort.medium:
+        reasoning = true;
+        force = false;
+        break;
+      case ReasoningEffort.high:
+      case ReasoningEffort.xhig:
+        reasoning = true;
+        force = true;
+        break;
+    }
+
     final retVal = _rwkv.rwkvmobile_runtime_eval_chat_with_history_async(
       _handle,
       _modelId,
@@ -272,8 +292,8 @@ class RWKVBackend implements RWKV {
       numInputs,
       decodeParam.maxTokens,
       ffi.nullptr,
-      generationParam.chatReasoning ? 1 : 0,
-      generationParam.forceReasoning ? 1 : 0,
+      reasoning ? 1 : 0,
+      force ? 1 : 0,
       generationParam.addGenerationPrompt ? 1 : 0,
     );
     _tryThrowErrorRetVal(retVal);

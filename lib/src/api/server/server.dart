@@ -142,9 +142,15 @@ class _SSE extends SseHandler {
       if (system != null) {
         ms.remove(system);
       }
+      final reasoning = completion.reasoningEffort == null
+          ? null
+          : ReasoningEffort.values
+                .where((e) => e.name == completion.reasoningEffort)
+                .firstOrNull;
       chatParam = ChatParam(
         model: completion.model,
         system: system?.content,
+        reasoning: reasoning,
         messages: ms.map((e) => e.content).toList(),
       );
     } else if (completion.prompt != null) {
