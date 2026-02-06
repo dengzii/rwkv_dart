@@ -54,7 +54,7 @@ class OpenAiApiClient implements RWKV {
 
     final history = param.messages;
 
-    final reasoning = _config.reasoningEffort;
+    final reasoning = _config.reasoningEffort.name;
 
     final data = {
       'model': param.model!,

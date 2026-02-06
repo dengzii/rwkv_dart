@@ -339,6 +339,8 @@ class GenerationConfig {
     String? prompt,
     bool? returnWholeGeneratedResult,
     ReasoningEffort? reasoningEffort,
+    String? userRole,
+    String? assistantRole,
   }) {
     return GenerationConfig(
       thinkingToken: thinkingToken ?? this.thinkingToken,
@@ -455,6 +457,22 @@ class GenerationResponse {
     this.choices,
     this.stopReasons,
   });
+
+  GenerationResponse copyWith({
+    String? text,
+    int? tokenCount,
+    StopReason? stopReason,
+    List<String>? choices,
+    List<StopReason>? stopReasons,
+  }) {
+    return GenerationResponse(
+      text: text ?? this.text,
+      tokenCount: tokenCount ?? this.tokenCount,
+      stopReason: stopReason ?? this.stopReason,
+      choices: choices ?? this.choices,
+      stopReasons: stopReasons ?? this.stopReasons,
+    );
+  }
 }
 
 class GenerationParam {
