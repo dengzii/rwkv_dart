@@ -1,3 +1,5 @@
+import 'package:rwkv_dart/rwkv_dart.dart';
+
 import 'backend.dart'
     if (dart.library.io) 'package:rwkv_dart/src/backend.dart'
     if (dart.library.html) 'package:rwkv_dart/src/web/backend.dart';
@@ -14,19 +16,34 @@ class RuntimeError {
   RuntimeError({required this.code, required this.message});
 }
 
-abstract class RWKV {
+abstract class RWKVBase {
+  /// Generate text from prompt.
+  /// The generated text will be streamed,
+  /// stream will be closed when generation is done.
+  Stream<GenerationResponse> generate(GenerationParam param);
+
+  Stream<GenerationResponse> chat(ChatParam param);
+
+  Future stopGenerate();
+
+  Future setGenerationConfig(GenerationConfig param);
+}
+
+abstract class RWKV extends RWKVBase {
   /// Create a RWKV ffi instance.
   factory RWKV.create() => RWKVBackend();
 
-  /// Access RWKV via network
-  factory RWKV.network(String baseUrl) => RWKVBackend(baseUrl);
+  /// Create RWKV instance run in the network, witch is compatible with OpenAI API.
+  factory RWKV.network(String baseUrl, [String? apiKey]) =>
+      RWKVBackend(baseUrl, apiKey);
+
+  /// create a [AlbatrossClient] instance.
+  factory RWKV.albatross(String baseUrl, [String? apiKey]) =>
+      AlbatrossClient(baseUrl, password: apiKey);
 
   /// Create a RWKV instance run in the isolate.
   factory RWKV.isolated() => RWKVIsolateProxy();
 
-  /// Initialize the RWKV ffi instance.
-  ///
-  /// This method should be called before any other methods.
   Future init([InitParam? param]);
 
   Future setLogLevel(RWKVLogLevel level);
@@ -44,18 +61,9 @@ abstract class RWKV {
 
   Future<String> dumpLog();
 
-  /// Generate text from prompt.
-  /// The generated text will be streamed,
-  /// stream will be closed when generation is done.
-  Stream<GenerationResponse> generate(GenerationParam param);
-
-  Stream<GenerationResponse> chat(ChatParam param);
-
   Future<GenerationState> getGenerationState();
 
   Stream<GenerationState> generationStateStream();
-
-  Future setGenerationConfig(GenerationConfig param);
 
   Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param);
 
@@ -70,8 +78,6 @@ abstract class RWKV {
 
   /// Clear the backend runtime state.
   Future clearState();
-
-  Future stopGenerate();
 
   Future<int> getSeed();
 
@@ -355,6 +361,40 @@ class GenerationConfig {
   @override
   String toString() {
     return 'GenerationConfig{reasoningEffort: $reasoningEffort, completionStopToken: $completionStopToken, prompt: $prompt, thinkingToken: $thinkingToken, eosToken: $eosToken, bosToken: $bosToken, tokenBanned: $tokenBanned, returnWholeGeneratedResult: $returnWholeGeneratedResult, userRole: $userRole, assistantRole: $assistantRole, spaceAfterRole: $spaceAfterRole}, addGenerationPrompt: $addGenerationPrompt';
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'reasoningEffort': reasoningEffort.name,
+      'completionStopToken': completionStopToken,
+      'prompt': prompt,
+      'thinkingToken': thinkingToken,
+      'eosToken': eosToken,
+      'bosToken': bosToken,
+      'tokenBanned': tokenBanned,
+      'returnWholeGeneratedResult': returnWholeGeneratedResult,
+      'userRole': userRole,
+      'assistantRole': assistantRole,
+      'spaceAfterRole': spaceAfterRole,
+    };
+  }
+
+  factory GenerationConfig.fromMap(dynamic map) {
+    return GenerationConfig(
+      reasoningEffort: ReasoningEffort.values.firstWhere(
+        (e) => e.name == map['reasoningEffort'],
+      ),
+      completionStopToken: map['completionStopToken'] as int,
+      prompt: map['prompt'] as String,
+      thinkingToken: map['thinkingToken'] as String,
+      eosToken: map['eosToken'] as String,
+      bosToken: map['bosToken'] as String,
+      tokenBanned: map['tokenBanned'] as List<int>,
+      returnWholeGeneratedResult: map['returnWholeGeneratedResult'] as bool,
+      userRole: map['userRole'] as String,
+      assistantRole: map['assistantRole'] as String,
+      spaceAfterRole: map['spaceAfterRole'] as bool,
+    );
   }
 }
 

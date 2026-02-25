@@ -91,7 +91,7 @@ class RWKVBackend implements RWKV {
   StreamController<GenerationState> _controllerGenerationState =
       StreamController.broadcast();
 
-  RWKVBackend([String? _]);
+  RWKVBackend([String? _, String? __]);
 
   ffi.DynamicLibrary _loadDynamicLib() {
     ffi.DynamicLibrary openDynamicLib(String file) =>
@@ -338,6 +338,7 @@ class RWKVBackend implements RWKV {
       param.maxTokens ?? decodeParam.maxTokens,
       generationParam.completionStopToken,
       ffi.nullptr,
+      1
     );
     _tryThrowErrorRetVal(retVal);
 
@@ -374,10 +375,14 @@ class RWKVBackend implements RWKV {
 
     int retVal = 0;
     if (param.prompt != generationParam.prompt) {
+      // ensure prompt ends with \n, this is a workaround for rwkv-mobile
+      final p = param.prompt.endsWith('\n')
+          ? param.prompt
+          : '${param.prompt}\n';
       retVal = _rwkv.rwkvmobile_runtime_set_prompt(
         _handle,
         _modelId,
-        param.prompt.toNativeChar(),
+        p.toNativeChar(),
       );
       _tryThrowErrorRetVal(retVal);
     }

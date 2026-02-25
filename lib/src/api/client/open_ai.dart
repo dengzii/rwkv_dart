@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart' hide HttpClientAdapter;
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/bean/openai/chunk_data_bean.dart';
+import 'package:rwkv_dart/src/api/bean/openai/openai_model_bean.dart';
 import 'package:rwkv_dart/src/logger.dart';
 
 import 'http_client.dart'
@@ -18,6 +19,9 @@ class OpenAiApiClient implements RWKV {
 
   GenerationConfig _config = GenerationConfig.initial();
   DecodeParam _decodeParam = DecodeParam.initial();
+  GenerationState _generationState = GenerationState.initial();
+
+  final _controllerState = StreamController<GenerationState>.broadcast();
 
   CancelToken? _cancelToken;
 
@@ -32,7 +36,8 @@ class OpenAiApiClient implements RWKV {
 
   OpenAiApiClient(this.url, {this.apiKey = ''}) {
     _dio.options.baseUrl = url;
-    _dio.options.headers['Authorization'] = 'Bearer ${apiKey}';
+    if (apiKey.isNotEmpty)
+      _dio.options.headers['Authorization'] = 'Bearer ${apiKey}';
     _dio.httpClientAdapter = adapter.createAdapter();
   }
 
@@ -66,7 +71,7 @@ class OpenAiApiClient implements RWKV {
       'presence_penalty': _decodeParam.presencePenalty,
       'stop': param.stopSequence,
       'penalty_decay': _decodeParam.penaltyDecay,
-      'reasoning_effort': reasoning,
+      if (reasoning != 'none') 'reasoning_effort': reasoning,
       'messages': [
         if (_config.prompt.isNotEmpty) {'system': _config.prompt},
         for (final (index, message) in history.indexed)
@@ -80,6 +85,7 @@ class OpenAiApiClient implements RWKV {
     };
     Response resp;
     try {
+      _controllerState.add(_generationState.copyWith(isGenerating: true));
       _cancelToken = CancelToken();
       resp = await _dio.post(
         path,
@@ -96,9 +102,7 @@ class OpenAiApiClient implements RWKV {
       }
       throw 'request failed';
     }
-
     final body = resp.data as ResponseBody;
-
     final transformer = StreamTransformer.fromBind(_sseEventTransformer);
 
     try {
@@ -109,6 +113,9 @@ class OpenAiApiClient implements RWKV {
         return;
       }
       rethrow;
+    } finally {
+      _controllerState.add(_generationState.copyWith(isGenerating: false));
+      _cancelToken = null;
     }
   }
 
@@ -130,6 +137,7 @@ class OpenAiApiClient implements RWKV {
     };
     Response resp;
     try {
+      _controllerState.add(_generationState.copyWith(isGenerating: true));
       _cancelToken = CancelToken();
       resp = await _dio.post(
         path,
@@ -142,6 +150,8 @@ class OpenAiApiClient implements RWKV {
         ),
       );
     } catch (e, s) {
+      _cancelToken = null;
+      _controllerState.add(_generationState.copyWith(isGenerating: false));
       if (e is DioException) {
         throw "${e.type}, $s";
       }
@@ -159,6 +169,9 @@ class OpenAiApiClient implements RWKV {
         return;
       }
       rethrow;
+    } finally {
+      _controllerState.add(_generationState.copyWith(isGenerating: false));
+      _cancelToken = null;
     }
   }
 
@@ -178,15 +191,10 @@ class OpenAiApiClient implements RWKV {
   }
 
   @override
-  Stream<GenerationState> generationStateStream() async* {
-    //
-  }
+  Stream<GenerationState> generationStateStream() => _controllerState.stream;
 
   @override
-  Future<GenerationState> getGenerationState() async {
-    await _dio.get('/generation_state');
-    return GenerationState.initial();
-  }
+  Future<GenerationState> getGenerationState() async => _generationState;
 
   @override
   Future<String> getHtpArch() {
@@ -204,8 +212,13 @@ class OpenAiApiClient implements RWKV {
   }
 
   @override
-  Future<dynamic> init([InitParam? param]) async {
-    //
+  Future<List<OpenaiModelBean>> init([InitParam? param]) async {
+    final resp = await _dio.get('/v1/models');
+    if (resp.statusCode != 200) {
+      throw 'request failed, HTTP ${resp.statusCode}';
+    }
+    final body = resp.data['data'] as Iterable;
+    return body.map((m) => OpenaiModelBean.fromJson(m)).toList();
   }
 
   @override
@@ -229,7 +242,9 @@ class OpenAiApiClient implements RWKV {
   }
 
   @override
-  Future<dynamic> setDecodeParam(DecodeParam param) async {}
+  Future<dynamic> setDecodeParam(DecodeParam param) async {
+    _decodeParam = param;
+  }
 
   @override
   Future<dynamic> setGenerationConfig(GenerationConfig param) async {
