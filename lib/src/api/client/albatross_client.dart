@@ -331,15 +331,13 @@ class AlbatrossClient implements RWKV {
     yield* body.stream.transform(_sseTransformer);
   }
 
-  // ==================== Batch State API ====================
+  // ==================== Multi-State API ====================
 
-  /// Batch Chat with State Cloning
+  /// Multi-branch Stateful Chat
   ///
-  /// Endpoint: POST /batch_state/chat/completions
+  /// Endpoint: POST /multi_state/chat/completions
   ///
-  /// Supports cloning from historical states.
-  /// [nextContentIdx]: Clone source batch index
-  /// [sessionIndex]: Use historical state index
+  /// Requires [sessionId], [dialogueIdx], and single prompt in [contents].
   Future<ChatResponse> chatBatchState(ChatRequest request) async {
     final data = request.toJson();
     data['stream'] = false;
@@ -348,19 +346,19 @@ class AlbatrossClient implements RWKV {
     }
 
     final response = await _dio.post(
-      '/batch_state/chat/completions',
+      '/multi_state/chat/completions',
       data: data,
     );
 
     if (response.data is Map && response.data['error'] != null) {
       final error = ErrorResponse.fromJson(response.data);
-      throw Exception('Batch state chat error: ${error.error}');
+      throw Exception('Multi-state chat error: ${error.error}');
     }
 
     return ChatResponse.fromJson(response.data);
   }
 
-  /// Stream Batch Chat with State
+  /// Stream Multi-branch Stateful Chat
   Stream<GenerationResponse> chatBatchStateStream(ChatRequest request) async* {
     final data = request.toJson();
     data['stream'] = true;
@@ -372,7 +370,7 @@ class AlbatrossClient implements RWKV {
     try {
       _cancelToken = CancelToken();
       resp = await _dio.post(
-        '/batch_state/chat/completions',
+        '/multi_state/chat/completions',
         data: data,
         cancelToken: _cancelToken,
         options: Options(responseType: ResponseType.stream),
@@ -411,10 +409,12 @@ class AlbatrossClient implements RWKV {
   /// Endpoint: POST /state/delete
   Future<DeleteSessionResponse> deleteSession(
     String sessionId, {
+    bool deletePrefix = false,
     String? password,
   }) async {
     final request = DeleteSessionRequest(
       sessionId: sessionId,
+      deletePrefix: deletePrefix,
       password: password ?? this.password,
     );
     final response = await _dio.post('/state/delete', data: request.toJson());
@@ -440,6 +440,7 @@ class AlbatrossClient implements RWKV {
 
     final request = ChatRequest(
       messages: messages,
+      contents: param.batch,
       maxTokens: param.maxTokens ?? _decodeParam.maxTokens,
       temperature: _decodeParam.temperature,
       topK: _decodeParam.topK,
@@ -449,6 +450,10 @@ class AlbatrossClient implements RWKV {
       stopTokens: param.stopSequence?.map((e) => e.hashCode).toList(),
       stream: true,
     );
+
+    if (param.batch != null) {
+      yield* chatV2Stream(request);
+    }
 
     yield* chatV3Stream(request);
   }
@@ -605,6 +610,8 @@ class AlbatrossClient implements RWKV {
           in stream.transform(_utf8Decoder).transform(LineSplitter())) {
         if (line.isEmpty) continue;
 
+        print(line);
+
         String event = '';
         String data = '';
 
@@ -647,13 +654,24 @@ class AlbatrossClient implements RWKV {
         try {
           final map = jsonDecode(data.trim()) as Map<String, dynamic>;
           final choices = map['choices'] as List<dynamic>?;
-          if (choices != null && choices.isNotEmpty) {
-            final choice = choices.first as Map<String, dynamic>;
-            final delta = choice['delta'] as Map<String, dynamic>?;
-            final text = delta?['content'] as String? ?? '';
+          if (choices != null) {
+            String text = '';
+            List<String>? choicesResult;
+            if (choices.length == 1) {
+              final choice = choices.first as Map<String, dynamic>;
+              final delta = choice['delta'] as Map<String, dynamic>?;
+              text = delta?['content'] as String? ?? '';
+            } else {
+              choicesResult = [];
+              for (final choice in choices) {
+                final delta = choice['delta'] as Map<String, dynamic>?;
+                choicesResult.add(delta?['content'] as String? ?? '');
+              }
+            }
             yield GenerationResponse(
               text: text,
               tokenCount: -1,
+              choices: choicesResult,
               stopReason: StopReason.none,
             );
           }

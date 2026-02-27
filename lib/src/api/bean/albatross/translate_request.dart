@@ -3,12 +3,14 @@ class TranslateRequest {
   final String sourceLang;
   final String targetLang;
   final List<String> textList;
+  final List<String>? placeholders;
   final String? password;
 
   TranslateRequest({
     this.sourceLang = 'auto',
     required this.targetLang,
     required this.textList,
+    this.placeholders,
     this.password,
   });
 
@@ -17,6 +19,7 @@ class TranslateRequest {
     data['source_lang'] = sourceLang;
     data['target_lang'] = targetLang;
     data['text_list'] = textList;
+    if (placeholders != null) data['placeholders'] = placeholders;
     if (password != null) data['password'] = password;
     return data;
   }

@@ -1,144 +1,109 @@
 import 'package:dio/dio.dart';
 import 'package:rwkv_dart/rwkv_dart.dart';
-import 'package:rwkv_dart/src/api/bean/openai/openai_model_bean.dart';
 import 'package:rwkv_dart/src/api/client/open_ai.dart';
+import 'package:rwkv_dart/src/logger.dart';
 
 class LoadedModel {
-  final ModelBaseInfo info;
+  final String ownedBy;
+  final ModelBean info;
   final RWKV rwkv;
 
-  LoadedModel({required this.info, required this.rwkv});
+  const LoadedModel({
+    required this.info,
+    required this.rwkv,
+    required this.ownedBy,
+  });
 }
 
 enum ServiceType {
   unknown,
   openai,
   rwkv, //
+  albatross,
 }
 
-class RwkvServiceClient {
-  final String name;
+class ModelService {
   final String id;
-  final String url;
   final Dio _dio = Dio();
+  final String _accessKey;
+  List<LoadedModel> _models = [];
+  ServiceType _serviceType = ServiceType.unknown;
+  bool _available = false;
 
-  List<LoadedModel> _loadedModels = [];
+  bool get available => _available;
 
-  ServiceType _serviceType = ServiceType.openai;
+  List<LoadedModel> get models => _models.toList();
 
   ServiceType get serviceType => _serviceType;
 
-  RwkvServiceClient({
-    required this.name,
-    required this.id,
-    required this.url,
-    String accessKey = '',
-  }) {
+  String get url => _dio.options.baseUrl;
+
+  static Map<String, ModelService> _cache = {};
+
+  ModelService._({required this.id, required String url, String accessKey = ''})
+    : _accessKey = accessKey {
     _dio.options.baseUrl = url;
-    _dio.options.headers['X-Access-Key'] = accessKey;
+    _dio.options.headers['X-Access-Key'] = _accessKey;
   }
 
-  Future<ServiceStatus> status() async {
-    List<ModelBean> models = [];
-    final rwkv = await _dio
-        .get('/health')
-        .then((e) => e.data)
-        .timeout(Duration(seconds: 1))
-        .catchError((e, s) async => null);
+  static Future<ModelService> create({
+    required String url,
+    String accessKey = '',
+    String id = '',
+  }) async {
+    final uid = '$url:$id:$accessKey';
 
-    if (rwkv == 'rwkv') {
-      final resp = await _dio.get('/v1/models');
-      final list = resp.data['data'] as Iterable? ?? [];
-      models = list.map(ModelBean.fromJson).toList();
-      _loadedModels = [
-        for (final m in models)
-          LoadedModel(
-            info: ModelBaseInfo(
-              name: m.name,
-              modelId: m.id,
-              instanceId: m.id,
-              port: 0,
-            ),
-            rwkv: OpenAiApiClient(url, apiKey: ''),
-          ),
-      ];
-      _serviceType = ServiceType.rwkv;
+    ModelService service;
+    if (_cache.containsKey(uid)) {
+      service = _cache[uid]!;
     } else {
-      final resp = await _dio.get('/v1/models').timeout(Duration(seconds: 2));
-      final list = resp.data['data'] as Iterable? ?? [];
-      models = list
-          .map(OpenaiModelBean.fromJson)
-          .map((e) => ModelBean.fromJson({'name': e.id, 'id': e.id}))
-          .toList();
-      _loadedModels = [
-        for (final m in models)
-          LoadedModel(
-            info: ModelBaseInfo(
-              name: m.id,
-              modelId: m.id,
-              instanceId: m.id,
-              port: 0,
-            ),
-            rwkv: OpenAiApiClient(url, apiKey: ''),
-          ),
-      ];
-      _serviceType = ServiceType.openai;
+      service = ModelService._(id: id, url: url, accessKey: accessKey);
     }
-    return ServiceStatus(
-      hostname: '',
-      system: '',
-      serviceId: url,
-      id: id,
-      uptime: 0,
-      models: models,
-      loadedModels: _loadedModels.map((e) => e.info).toList(),
-    );
+    try {
+      await service.refresh();
+    } catch (_) {
+      logw('model service is not available: $url');
+    }
+    _cache[uid] = service;
+
+    return service;
   }
 
-  Future<LoadedModel> create(String modelId) async {
-    final m = _loadedModels.where((e) => e.info.modelId == modelId).firstOrNull;
-    if (m != null) {
-      return m;
+  Future refresh() async {
+    try {
+      _available = false;
+      await _refresh();
+      _available = true;
+    } catch (e) {
+      rethrow;
     }
-
-    if (serviceType == ServiceType.openai) {
-      throw 'not supported';
-    }
-
-    final response = await _dio.get(
-      '/create',
-      queryParameters: {'model_id': modelId},
-    );
-    final port = response.data['port'] as int;
-    final info = ModelBaseInfo.fromJson(response.data['model']);
-    final uri = Uri.parse(url).replace(port: port).replace(path: '/');
-    return LoadedModel(info: info, rwkv: OpenAiApiClient(uri.toString()));
   }
 
-  Future<List<ModelBean>> getModels() async {
-    if (_serviceType == ServiceType.unknown) {
-      await status();
-    }
-    if (_serviceType == ServiceType.openai) {
-      final resp = await _dio.get('/v1/models').timeout(Duration(seconds: 2));
-      final list = resp.data['data'] as Iterable? ?? [];
-      final models = list.map(OpenaiModelBean.fromJson);
-      return [
-        for (final m in models) ModelBean.fromJson({'name': m.id, 'id': m.id}),
-      ];
-    }
-    if (_serviceType == ServiceType.rwkv) {
-      final resp = await _dio.get('/v1/models').timeout(Duration(seconds: 2));
-      final list = resp.data as Iterable? ?? [];
-      return list.map(ModelBean.fromJson).toList();
-    }
-    return [];
-  }
+  Future _refresh() async {
+    _models.clear();
+    final resp = await _dio.get('/v1/models').timeout(Duration(seconds: 2));
+    final list = resp.data['data'] as Iterable? ?? [];
+    final url = _dio.options.baseUrl;
 
-  Future<List<LoadedModel>> getLoadedModels() async {
-    if (_serviceType == ServiceType.unknown) {
-      await status();
+    for (final data in list) {
+      final ownedBy = data['owned_by'] ?? '';
+      RWKV rwkv;
+      bool albatross = false;
+      if ({'rwkv_lightning', "albatross"}.contains(ownedBy)) {
+        rwkv = AlbatrossClient(url, password: _accessKey);
+        albatross = true;
+        _serviceType = ServiceType.albatross;
+      } else {
+        rwkv = OpenAiApiClient(url, apiKey: _accessKey);
+        _serviceType = ServiceType.openai;
+      }
+      final info = ModelBean.fromJson({
+        'name': data['id'],
+        'id': data['id'],
+        'backend': albatross ? 'albatross' : null,
+      });
+      final model = LoadedModel(info: info, ownedBy: ownedBy, rwkv: rwkv);
+      _models.add(model);
     }
-    return _loadedModels;
   }
 }

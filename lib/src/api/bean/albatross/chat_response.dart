@@ -6,14 +6,14 @@ class ChatResponse {
   final String object;
   final String model;
   final List<ChatChoice> choices;
-  final int? sessionIndex;
+  final int? dialogueIdx;
 
   ChatResponse({
     required this.id,
     required this.object,
     required this.model,
     required this.choices,
-    this.sessionIndex,
+    this.dialogueIdx,
   });
 
   factory ChatResponse.fromJson(dynamic data) {
@@ -27,7 +27,7 @@ class ChatResponse {
               ?.map((e) => ChatChoice.fromJson(e))
               .toList() ??
           [],
-      sessionIndex: json['session_index'],
+      dialogueIdx: json['dialogue_idx'],
     );
   }
 }
