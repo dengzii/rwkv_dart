@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart' hide HttpClientAdapter;
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/bean/openai/messages_bean.dart';
+import 'package:rwkv_dart/src/api/common/sse_event_transformer.dart';
 import 'package:rwkv_dart/src/logger.dart';
 
 import 'http_client.dart'
@@ -86,7 +85,7 @@ class AlbatrossClient implements RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(_sseTransformer);
+    yield* body.stream.transform(sseEventTransformer(request.suffix.length));
   }
 
   // ==================== Translation API ====================
@@ -167,7 +166,7 @@ class AlbatrossClient implements RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(_sseTransformer);
+    yield* body.stream.transform(sseEventTransformer(1));
   }
 
   // ==================== Chat v2 API (Continuous Batch) ====================
@@ -196,11 +195,29 @@ class AlbatrossClient implements RWKV {
 
   /// Stream Continuous Batch Chat (v2)
   Stream<GenerationResponse> chatV2Stream(ChatRequest request) async* {
-    final data = request.toJson();
+    final r = ChatRequest(
+      model: request.model,
+      contents: request.contents,
+      stopTokens: request.stopTokens,
+      temperature: request.temperature ?? _decodeParam.temperature,
+      topK: request.topK ?? _decodeParam.topK,
+      topP: request.topP ?? _decodeParam.topP,
+      maxTokens: request.maxTokens ?? _decodeParam.maxTokens,
+      alphaDecay: request.alphaDecay ?? _decodeParam.penaltyDecay,
+      alphaPresence: request.alphaPresence ?? _decodeParam.presencePenalty,
+      alphaFrequency: request.alphaFrequency ?? _decodeParam.frequencyPenalty,
+      padZero: false,
+      stream: true,
+    );
+
+    final data = r.toJson();
     data['stream'] = true;
     if (password != null && data['password'] == null) {
       data['password'] = password;
     }
+
+    logi('request /v2/chat/completions');
+    logi(data);
 
     Response resp;
     try {
@@ -213,14 +230,20 @@ class AlbatrossClient implements RWKV {
       );
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
-        yield GenerationResponse(text: '', stopReason: StopReason.canceled);
+        yield GenerationResponse(
+          text: '',
+          choices: List.filled(request.contents?.length ?? 1, ''),
+          stopReason: StopReason.canceled,
+        );
         return;
       }
       rethrow;
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(_sseTransformer);
+    yield* body.stream.transform(
+      sseEventTransformer(request.contents?.length ?? 1),
+    );
   }
 
   // ==================== Chat v3 API (Fast) ====================
@@ -274,7 +297,7 @@ class AlbatrossClient implements RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(_sseTransformer);
+    yield* body.stream.transform(sseEventTransformer(1));
   }
 
   // ==================== State Chat API ====================
@@ -328,7 +351,7 @@ class AlbatrossClient implements RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(_sseTransformer);
+    yield* body.stream.transform(sseEventTransformer(1));
   }
 
   // ==================== Multi-State API ====================
@@ -384,7 +407,7 @@ class AlbatrossClient implements RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(_sseTransformer);
+    yield* body.stream.transform(sseEventTransformer(1));
   }
 
   // ==================== Session Management ====================
@@ -601,91 +624,4 @@ class AlbatrossClient implements RWKV {
       'textToSpeech is not supported in AlbatrossClient',
     );
   }
-
-  // ==================== SSE Transformer ====================
-
-  StreamTransformer<Uint8List, GenerationResponse> get _sseTransformer {
-    return StreamTransformer.fromBind((stream) async* {
-      await for (final line
-          in stream.transform(_utf8Decoder).transform(LineSplitter())) {
-        if (line.isEmpty) continue;
-
-        print(line);
-
-        String event = '';
-        String data = '';
-
-        final index = line.indexOf(': ');
-        if (index != -1) {
-          event = line.substring(0, index).trim();
-          data = line.substring(index + 2).trim();
-        } else {
-          logw('Unexpected SSE line: $line');
-          continue;
-        }
-
-        if (event != 'data') continue;
-
-        if (data == '[DONE]') {
-          yield GenerationResponse(
-            text: '',
-            tokenCount: -1,
-            stopReason: StopReason.eos,
-          );
-          break;
-        }
-
-        if (data == '[PING]') {
-          logd('[PING]');
-          continue;
-        }
-
-        if (data == '[ERROR]') {
-          yield GenerationResponse(
-            text: '',
-            tokenCount: -1,
-            stopReason: StopReason.error,
-          );
-          break;
-        }
-
-        if (data.trim().isEmpty) continue;
-
-        try {
-          final map = jsonDecode(data.trim()) as Map<String, dynamic>;
-          final choices = map['choices'] as List<dynamic>?;
-          if (choices != null) {
-            String text = '';
-            List<String>? choicesResult;
-            if (choices.length == 1) {
-              final choice = choices.first as Map<String, dynamic>;
-              final delta = choice['delta'] as Map<String, dynamic>?;
-              text = delta?['content'] as String? ?? '';
-            } else {
-              choicesResult = [];
-              for (final choice in choices) {
-                final delta = choice['delta'] as Map<String, dynamic>?;
-                choicesResult.add(delta?['content'] as String? ?? '');
-              }
-            }
-            yield GenerationResponse(
-              text: text,
-              tokenCount: -1,
-              choices: choicesResult,
-              stopReason: StopReason.none,
-            );
-          }
-        } catch (e) {
-          logw('Failed to parse SSE data: $e');
-        }
-      }
-    });
-  }
-
-  static final StreamTransformer<Uint8List, String> _utf8Decoder =
-      StreamTransformer.fromHandlers(
-        handleData: (data, sink) {
-          sink.add(utf8.decode(data));
-        },
-      );
 }

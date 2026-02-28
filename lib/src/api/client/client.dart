@@ -43,7 +43,6 @@ class ModelService {
   ModelService._({required this.id, required String url, String accessKey = ''})
     : _accessKey = accessKey {
     _dio.options.baseUrl = url;
-    _dio.options.headers['X-Access-Key'] = _accessKey;
   }
 
   static Future<ModelService> create({
@@ -61,6 +60,7 @@ class ModelService {
     }
     try {
       await service.refresh();
+      logd('model service created: $url, ${service.models.length} model(s)');
     } catch (_) {
       logw('model service is not available: $url');
     }

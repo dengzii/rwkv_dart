@@ -6,6 +6,7 @@ import 'package:dio/dio.dart' hide HttpClientAdapter;
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/bean/openai/chunk_data_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/openai_model_bean.dart';
+import 'package:rwkv_dart/src/api/common/sse_event_transformer.dart';
 import 'package:rwkv_dart/src/logger.dart';
 
 import 'http_client.dart'
@@ -103,10 +104,9 @@ class OpenAiApiClient implements RWKV {
       throw 'request failed';
     }
     final body = resp.data as ResponseBody;
-    final transformer = StreamTransformer.fromBind(_sseEventTransformer);
 
     try {
-      yield* body.stream.transform(transformer);
+      yield* body.stream.transform(sseEventTransformer(param.batch?.length));
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(text: '', stopReason: StopReason.canceled);
@@ -159,10 +159,9 @@ class OpenAiApiClient implements RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    final transformer = StreamTransformer.fromBind(_sseEventTransformer);
 
     try {
-      yield* body.stream.transform(transformer);
+      yield* body.stream.transform(sseEventTransformer(1));
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(text: '', stopReason: StopReason.canceled);
@@ -289,63 +288,3 @@ StreamTransformer<Uint8List, String> unit8ListToString =
         sink.add(utf8.decode(data));
       },
     );
-
-Stream<GenerationResponse> _sseEventTransformer(
-  Stream<Uint8List> stream,
-) async* {
-  await for (final line
-      in stream.transform(unit8ListToString).transform(LineSplitter())) {
-    if (line.isEmpty) {
-      continue;
-    }
-    String event = '';
-    String data = '';
-
-    final index = line.indexOf(': ');
-    if (index != -1) {
-      event = line.substring(0, index).trim();
-      data = line.substring(index + 1).trim();
-    } else {
-      logw('unexpected line: $line');
-      continue;
-    }
-    if (event == 'data') {
-      //
-    } else {
-      continue;
-    }
-    if (data == '[DONE]') {
-      yield GenerationResponse(
-        text: '',
-        tokenCount: -1,
-        stopReason: StopReason.eos,
-      );
-      break;
-    }
-    if (data == '[PING]') {
-      logd('[PING]');
-      continue;
-    }
-    if (data == '[ERROR]') {
-      yield GenerationResponse(
-        text: '',
-        tokenCount: -1,
-        stopReason: StopReason.error,
-      );
-      break;
-    }
-    if (data.trim().isEmpty) {
-      continue;
-    }
-    final map = jsonDecode(data.trim());
-    final bean = ChunkDataBean.fromJson(map);
-
-    final choose = bean.choices.first;
-    final text = choose.delta != null ? choose.delta?.content : choose.text;
-    yield GenerationResponse(
-      text: text ?? '',
-      tokenCount: -1,
-      stopReason: StopReason.none,
-    );
-  }
-}
