@@ -36,6 +36,34 @@ class AlbatrossClient implements RWKV {
     _dio.httpClientAdapter = adapter.createAdapter();
   }
 
+  ChatRequest _applyConfig(ChatRequest request) {
+    return ChatRequest(
+      model: request.model,
+      contents: request.contents,
+      prefix: request.prefix,
+      suffix: request.suffix,
+      messages: request.messages,
+      maxTokens: request.maxTokens ?? _decodeParam.maxTokens,
+      temperature: request.temperature ?? _decodeParam.temperature,
+      topK: request.topK ?? _decodeParam.topK,
+      topP: request.topP ?? _decodeParam.topP,
+      noise: request.noise,
+      alphaPresence: request.alphaPresence ?? _decodeParam.presencePenalty,
+      alphaFrequency: request.alphaFrequency ?? _decodeParam.frequencyPenalty,
+      alphaDecay: request.alphaDecay ?? _decodeParam.penaltyDecay,
+      stopTokens: request.stopTokens,
+      stream: request.stream,
+      chunkSize: request.chunkSize,
+      padZero: request.padZero,
+      enableThink:
+          request.enableThink ??
+          _config.reasoningEffort != ReasoningEffort.none,
+      sessionId: request.sessionId,
+      dialogueIdx: request.dialogueIdx,
+      password: request.password,
+    );
+  }
+
   // ==================== FIM API ====================
 
   /// Fill-In-Middle (FIM) - Code/文本补全
@@ -124,7 +152,7 @@ class AlbatrossClient implements RWKV {
   ///
   /// Standard batch synchronous inference.
   Future<ChatResponse> chatV1(ChatRequest request) async {
-    final data = request.toJson();
+    final data = _applyConfig(request).toJson();
     data['stream'] = false;
     if (password != null && data['password'] == null) {
       data['password'] = password;
@@ -142,7 +170,7 @@ class AlbatrossClient implements RWKV {
 
   /// Stream Chat Completions (v1)
   Stream<GenerationResponse> chatV1Stream(ChatRequest request) async* {
-    final data = request.toJson();
+    final data = _applyConfig(request).toJson();
     data['stream'] = true;
     if (password != null && data['password'] == null) {
       data['password'] = password;
@@ -177,7 +205,7 @@ class AlbatrossClient implements RWKV {
   ///
   /// Supports dynamic scheduling, automatically loads new requests after tasks complete.
   Future<ChatResponse> chatV2(ChatRequest request) async {
-    final data = request.toJson();
+    final data = _applyConfig(request).toJson();
     data['stream'] = false;
     if (password != null && data['password'] == null) {
       data['password'] = password;
@@ -255,7 +283,7 @@ class AlbatrossClient implements RWKV {
   /// Either [contents] or [messages] must be provided.
   /// [enableThink]: Add `<think>` tags for reasoning.
   Future<ChatResponse> chatV3(ChatRequest request) async {
-    final data = request.toJson();
+    final data = _applyConfig(request).toJson();
     data['stream'] = false;
     if (password != null && data['password'] == null) {
       data['password'] = password;
@@ -273,7 +301,7 @@ class AlbatrossClient implements RWKV {
 
   /// Stream Fast Chat (v3)
   Stream<GenerationResponse> chatV3Stream(ChatRequest request) async* {
-    final data = request.toJson();
+    final data = _applyConfig(request).toJson();
     data['stream'] = true;
     if (password != null && data['password'] == null) {
       data['password'] = password;
@@ -309,7 +337,7 @@ class AlbatrossClient implements RWKV {
   /// Limitation: Only supports BatchSize = 1
   /// [sessionId]: Unique session identifier for conversation memory.
   Future<ChatResponse> chatWithState(ChatRequest request) async {
-    final data = request.toJson();
+    final data = _applyConfig(request).toJson();
     data['stream'] = false;
     if (password != null && data['password'] == null) {
       data['password'] = password;
@@ -327,7 +355,7 @@ class AlbatrossClient implements RWKV {
 
   /// Stream Chat with Session State
   Stream<GenerationResponse> chatWithStateStream(ChatRequest request) async* {
-    final data = request.toJson();
+    final data = _applyConfig(request).toJson();
     data['stream'] = true;
     if (password != null && data['password'] == null) {
       data['password'] = password;
@@ -362,7 +390,7 @@ class AlbatrossClient implements RWKV {
   ///
   /// Requires [sessionId], [dialogueIdx], and single prompt in [contents].
   Future<ChatResponse> chatBatchState(ChatRequest request) async {
-    final data = request.toJson();
+    final data = _applyConfig(request).toJson();
     data['stream'] = false;
     if (password != null && data['password'] == null) {
       data['password'] = password;
@@ -383,7 +411,7 @@ class AlbatrossClient implements RWKV {
 
   /// Stream Multi-branch Stateful Chat
   Stream<GenerationResponse> chatBatchStateStream(ChatRequest request) async* {
-    final data = request.toJson();
+    final data = _applyConfig(request).toJson();
     data['stream'] = true;
     if (password != null && data['password'] == null) {
       data['password'] = password;
@@ -472,6 +500,7 @@ class AlbatrossClient implements RWKV {
       alphaFrequency: _decodeParam.frequencyPenalty,
       stopTokens: param.stopSequence?.map((e) => e.hashCode).toList(),
       stream: true,
+      enableThink: param.reasoning != ReasoningEffort.none,
     );
 
     if (param.batch != null) {

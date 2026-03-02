@@ -279,7 +279,10 @@ enum ReasoningEffort {
   medium,
   // force reasoning
   high,
-  xhig,
+  xhig;
+
+  static ReasoningEffort? fromName(String name) =>
+      values.where((e) => e.name == name).firstOrNull;
 }
 
 class GenerationConfig {
