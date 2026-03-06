@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart' hide HttpClientAdapter;
 import 'package:rwkv_dart/rwkv_dart.dart';
-import 'package:rwkv_dart/src/api/bean/openai/chunk_data_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/openai_model_bean.dart';
+import 'package:rwkv_dart/src/api/common/errors.dart';
 import 'package:rwkv_dart/src/api/common/sse_event_transformer.dart';
 import 'package:rwkv_dart/src/logger.dart';
 
@@ -43,8 +43,13 @@ class OpenAiApiClient implements RWKV {
   }
 
   Future getModelList() async {
-    final response = await _dio.get('/v1/models');
-    return response.data;
+    try {
+      final response = await _dio.get('/v1/models');
+      return response.data;
+    } catch (e) {
+      checkError(e);
+      rethrow;
+    }
   }
 
   @override
@@ -54,13 +59,11 @@ class OpenAiApiClient implements RWKV {
     if (param.model == null || param.model!.isEmpty) {
       throw 'param.model is null or empty';
     }
-    if (param.messages.length % 2 != 1) {
-      throw 'param.messages.length must be odd';
-    }
 
-    final history = param.messages;
+    final history = param.messages!;
 
-    final reasoning = _config.reasoningEffort.name;
+    final reasoning = param.reasoning ?? _config.reasoningEffort.name;
+    final enable_thinking = reasoning != 'none';
 
     final data = {
       'model': param.model!,
@@ -72,18 +75,20 @@ class OpenAiApiClient implements RWKV {
       'presence_penalty': _decodeParam.presencePenalty,
       'stop': param.stopSequence,
       'penalty_decay': _decodeParam.penaltyDecay,
-      if (reasoning != 'none') 'reasoning_effort': reasoning,
+
+      /// Non-standard parameters
+      if (enable_thinking) 'enable_thinking': enable_thinking,
+
+      if (enable_thinking) 'reasoning_effort': reasoning,
       'messages': [
-        if (_config.prompt.isNotEmpty) {'system': _config.prompt},
-        for (final (index, message) in history.indexed)
-          {
-            'role': index % 2 == 0
-                ? _config.userRole.toLowerCase()
-                : _config.assistantRole.toLowerCase(),
-            'content': message,
-          },
+        if (_config.prompt.isNotEmpty)
+          {'role': 'system', 'content': _config.prompt},
+        for (final msg in history) {'role': msg.role, 'content': msg.content},
       ],
     };
+
+    logv(data);
+
     Response resp;
     try {
       _controllerState.add(_generationState.copyWith(isGenerating: true));
@@ -98,8 +103,9 @@ class OpenAiApiClient implements RWKV {
         ),
       );
     } catch (e, s) {
+      checkError(e);
       if (e is DioException) {
-        throw "${e.type}, $s";
+        throw "${e.type} ${e.response?.statusCode}\n$s";
       }
       throw 'request failed';
     }
@@ -150,6 +156,7 @@ class OpenAiApiClient implements RWKV {
         ),
       );
     } catch (e, s) {
+      checkError(e);
       _cancelToken = null;
       _controllerState.add(_generationState.copyWith(isGenerating: false));
       if (e is DioException) {
@@ -163,6 +170,7 @@ class OpenAiApiClient implements RWKV {
     try {
       yield* body.stream.transform(sseEventTransformer(1));
     } catch (e) {
+      checkError(e);
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(text: '', stopReason: StopReason.canceled);
         return;

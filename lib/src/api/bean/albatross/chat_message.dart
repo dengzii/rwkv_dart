@@ -1,16 +1,16 @@
 @pragma("json_id:chat_message_001")
-class ChatMessage {
+class ChatMessageBean {
   final String role;
   final String content;
 
-  ChatMessage({
+  ChatMessageBean({
     required this.role,
     required this.content,
   });
 
-  factory ChatMessage.fromJson(dynamic data) {
+  factory ChatMessageBean.fromJson(dynamic data) {
     final json = data as Map<String, dynamic>;
-    return ChatMessage(
+    return ChatMessageBean(
       role: json['role'] ?? '',
       content: json['content'] ?? '',
     );

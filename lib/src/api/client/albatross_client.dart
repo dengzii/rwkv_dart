@@ -480,18 +480,20 @@ class AlbatrossClient implements RWKV {
     // Use v3 API for chat by default (optimized for BatchSize=1)
     // Convert ChatParam to ChatRequest
     final messages = <MessageBean>[];
-    for (int i = 0; i < param.messages.length; i++) {
-      messages.add(
-        MessageBean(
-          role: i % 2 == 0 ? _config.userRole : _config.assistantRole,
-          content: param.messages[i],
-        ),
-      );
+    for (final m in param.messages ?? []) {
+      messages.add(MessageBean(role: m.role, content: m.content));
     }
 
+    final contents = <String>[];
+    for (final m in param.batch ?? []) {
+      contents.add(m.content);
+    }
+
+    final batch = param.batch != null;
+
     final request = ChatRequest(
-      messages: messages,
-      contents: param.batch,
+      messages: batch ? null : messages,
+      contents: batch ? contents : null,
       maxTokens: param.maxTokens ?? _decodeParam.maxTokens,
       temperature: _decodeParam.temperature,
       topK: _decodeParam.topK,
@@ -500,7 +502,9 @@ class AlbatrossClient implements RWKV {
       alphaFrequency: _decodeParam.frequencyPenalty,
       stopTokens: param.stopSequence?.map((e) => e.hashCode).toList(),
       stream: true,
-      enableThink: param.reasoning != ReasoningEffort.none,
+      enableThink: param.reasoning == null
+          ? null
+          : param.reasoning != ReasoningEffort.none,
     );
 
     if (param.batch != null) {

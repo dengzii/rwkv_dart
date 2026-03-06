@@ -147,11 +147,14 @@ class _SSE extends SseHandler {
           : ReasoningEffort.values
                 .where((e) => e.name == completion.reasoningEffort)
                 .firstOrNull;
+      final cm = ms
+          .map((e) => ChatMessage(role: e.role, content: e.content))
+          .toList();
       chatParam = ChatParam(
         model: completion.model,
-        system: system?.content,
+        systemPrompt: system?.content,
         reasoning: reasoning,
-        messages: ms.map((e) => e.content).toList(),
+        messages: cm,
       );
     } else if (completion.prompt != null) {
       genParam = GenerationParam(

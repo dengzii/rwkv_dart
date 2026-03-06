@@ -3,7 +3,7 @@ import 'chat_message.dart';
 @pragma("json_id:chat_choice_001")
 class ChatChoice {
   final int index;
-  final ChatMessage message;
+  final ChatMessageBean message;
   final String? finishReason;
 
   ChatChoice({
@@ -16,7 +16,7 @@ class ChatChoice {
     final json = data as Map<String, dynamic>;
     return ChatChoice(
       index: json['index'] ?? 0,
-      message: ChatMessage.fromJson(json['message'] ?? {}),
+      message: ChatMessageBean.fromJson(json['message'] ?? {}),
       finishReason: json['finish_reason'],
     );
   }

@@ -43,6 +43,9 @@ class ModelService {
   ModelService._({required this.id, required String url, String accessKey = ''})
     : _accessKey = accessKey {
     _dio.options.baseUrl = url;
+    if (accessKey.isNotEmpty) {
+      _dio.options.headers['Authorization'] = 'Bearer $accessKey';
+    }
   }
 
   static Future<ModelService> create({
@@ -60,7 +63,9 @@ class ModelService {
     }
     try {
       await service.refresh();
-      logd('model service created: $url, ${service.models.length} model(s)');
+      if (!_cache.containsKey(uid)) {
+        logd('model service created: $url, ${service.models.length} model(s)');
+      }
     } catch (_) {
       logw('model service is not available: $url');
     }
@@ -80,7 +85,7 @@ class ModelService {
   }
 
   Future _refresh() async {
-    _models.clear();
+    List<LoadedModel> m = [];
     final resp = await _dio.get('/v1/models').timeout(Duration(seconds: 2));
     final list = resp.data['data'] as Iterable? ?? [];
     final url = _dio.options.baseUrl;
@@ -100,10 +105,17 @@ class ModelService {
       final info = ModelBean.fromJson({
         'name': data['id'],
         'id': data['id'],
+        'fileSize': data['file_size'],
+        'modelSize': data['model_size'],
         'backend': albatross ? 'albatross' : null,
+        'tokenizer': data['tokenizer'],
+        'tags': data['tags'],
+        'groups': data['groups'],
+        'updatedAt': data['updated_at'],
       });
       final model = LoadedModel(info: info, ownedBy: ownedBy, rwkv: rwkv);
-      _models.add(model);
+      m.add(model);
     }
+    _models = m;
   }
 }

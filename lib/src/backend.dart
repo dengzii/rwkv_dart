@@ -242,7 +242,7 @@ class RWKVBackend implements RWKV {
 
   @override
   Stream<GenerationResponse> chat(ChatParam param) async* {
-    final history = param.messages;
+    final history = param.messages!.map((e) => e.content).toList();
 
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
 
@@ -259,9 +259,9 @@ class RWKVBackend implements RWKV {
       decodeParam = decodeParam.copyWith(maxTokens: param.maxTokens);
     }
 
-    if (param.system != null) {
+    if (param.systemPrompt != null) {
       await setGenerationConfig(
-        generationParam.copyWith(prompt: 'System: ${param.system?.trim()}'),
+        generationParam.copyWith(prompt: 'System: ${param.systemPrompt?.trim()}'),
       );
     }
 
@@ -338,7 +338,7 @@ class RWKVBackend implements RWKV {
       param.maxTokens ?? decodeParam.maxTokens,
       generationParam.completionStopToken,
       ffi.nullptr,
-      1
+      1,
     );
     _tryThrowErrorRetVal(retVal);
 
@@ -414,24 +414,6 @@ class RWKVBackend implements RWKV {
         _modelId,
         ptr,
         param.tokenBanned.length,
-      );
-      _tryThrowErrorRetVal(retVal);
-    }
-
-    if (param.userRole != generationParam.userRole) {
-      retVal = _rwkv.rwkvmobile_runtime_set_user_role(
-        _handle,
-        _modelId,
-        param.userRole.toNativeChar(),
-      );
-      _tryThrowErrorRetVal(retVal);
-    }
-
-    if (param.assistantRole != generationParam.assistantRole) {
-      retVal = _rwkv.rwkvmobile_runtime_set_response_role(
-        _handle,
-        _modelId,
-        param.assistantRole.toNativeChar(),
       );
       _tryThrowErrorRetVal(retVal);
     }

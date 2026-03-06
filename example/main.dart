@@ -20,7 +20,16 @@ void main() async {
   );
   // await rwkv.loadInitialState(state);
   var stream = rwkv
-      .chat(ChatParam(messages: ['你是谁']))
+      .chat(
+        ChatParam(
+          messages: [
+            ChatMessage(
+              role: 'user',
+              content: 'What is the most important thing in the world?',
+            ),
+          ],
+        ),
+      )
       .asBroadcastStream();
   String resp = "";
   stream.listen(

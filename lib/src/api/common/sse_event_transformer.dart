@@ -9,11 +9,44 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
   int? batch,
 ) {
   return StreamTransformer.fromBind((stream) async* {
-    await for (final line
-        in stream.transform(_utf8Decoder).transform(LineSplitter())) {
+    final lines = stream
+        .transform(StreamTransformer.fromBind(utf8.decoder.bind))
+        .transform(LineSplitter());
+
+    bool insertThinkEndTag = false;
+    bool insertThinkStartTag = true;
+
+    String _resolveContent(Map? delta) {
+      if (delta == null) return '';
+
+      /// DeepSeek style
+      final reasoning = delta['reasoning_content'];
+      final content = delta['content'];
+
+      if (reasoning == null && content == null) {
+        logw('bad sse event, no content or reasoning');
+        return '';
+      }
+
+      String result = reasoning != null ? reasoning : content;
+      if (reasoning != null && insertThinkStartTag) {
+        insertThinkEndTag = true;
+        insertThinkStartTag = false;
+        result = '<think>${reasoning}';
+      }
+
+      if (content != null && insertThinkEndTag) {
+        result = '</think>${content}';
+        insertThinkEndTag = false;
+      }
+
+      return result;
+    }
+
+    await for (final line in lines) {
       if (line.isEmpty) continue;
 
-      // print(line);
+      logv(line);
 
       String event = '';
       String data = '';
@@ -66,7 +99,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
           if (batch == 1 || batch == null) {
             final choice = choices.first as Map<String, dynamic>;
             final delta = choice['delta'] as Map<String, dynamic>?;
-            text = delta?['content'] as String? ?? '';
+            text = _resolveContent(delta);
           } else {
             for (final choice in choices) {
               final index = choice['index'] as int;
@@ -74,6 +107,12 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
               choiceList[index] = delta;
             }
           }
+
+          /// Avoid emit empty content
+          if (text.isEmpty && batch == 1) {
+            continue;
+          }
+
           yield GenerationResponse(
             text: text,
             tokenCount: -1,
@@ -87,10 +126,3 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
     }
   });
 }
-
-StreamTransformer<Uint8List, String> _utf8Decoder =
-    StreamTransformer.fromHandlers(
-      handleData: (data, sink) {
-        sink.add(utf8.decode(data, allowMalformed: true));
-      },
-    );

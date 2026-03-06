@@ -311,9 +311,6 @@ class GenerationConfig {
   // return whole generated result or only new tokens
   final bool returnWholeGeneratedResult;
 
-  final String userRole;
-  final String assistantRole;
-
   final bool spaceAfterRole;
 
   GenerationConfig({
@@ -325,8 +322,6 @@ class GenerationConfig {
     this.addGenerationPrompt = false,
     this.tokenBanned = const [],
     this.spaceAfterRole = true,
-    this.assistantRole = "Assistant",
-    this.userRole = "User",
     this.eosToken,
     this.bosToken,
   });
@@ -363,7 +358,7 @@ class GenerationConfig {
 
   @override
   String toString() {
-    return 'GenerationConfig{reasoningEffort: $reasoningEffort, completionStopToken: $completionStopToken, prompt: $prompt, thinkingToken: $thinkingToken, eosToken: $eosToken, bosToken: $bosToken, tokenBanned: $tokenBanned, returnWholeGeneratedResult: $returnWholeGeneratedResult, userRole: $userRole, assistantRole: $assistantRole, spaceAfterRole: $spaceAfterRole}, addGenerationPrompt: $addGenerationPrompt';
+    return 'GenerationConfig{reasoningEffort: $reasoningEffort, completionStopToken: $completionStopToken, prompt: $prompt, thinkingToken: $thinkingToken, eosToken: $eosToken, bosToken: $bosToken, tokenBanned: $tokenBanned, returnWholeGeneratedResult: $returnWholeGeneratedResult, spaceAfterRole: $spaceAfterRole}, addGenerationPrompt: $addGenerationPrompt';
   }
 
   Map<String, dynamic> toMap() {
@@ -376,8 +371,6 @@ class GenerationConfig {
       'bosToken': bosToken,
       'tokenBanned': tokenBanned,
       'returnWholeGeneratedResult': returnWholeGeneratedResult,
-      'userRole': userRole,
-      'assistantRole': assistantRole,
       'spaceAfterRole': spaceAfterRole,
     };
   }
@@ -394,8 +387,6 @@ class GenerationConfig {
       bosToken: map['bosToken'] as String,
       tokenBanned: map['tokenBanned'] as List<int>,
       returnWholeGeneratedResult: map['returnWholeGeneratedResult'] as bool,
-      userRole: map['userRole'] as String,
-      assistantRole: map['assistantRole'] as String,
       spaceAfterRole: map['spaceAfterRole'] as bool,
     );
   }
@@ -486,6 +477,7 @@ class TextToSpeechParam {
   });
 }
 
+// TODO add reasoning content
 class GenerationResponse {
   final String text;
   final int tokenCount;
@@ -539,9 +531,16 @@ class GenerationParam {
   });
 }
 
+class ChatMessage {
+  final String role;
+  final String content;
+
+  const ChatMessage({required this.role, required this.content});
+}
+
 class ChatParam {
-  final List<String> messages;
-  final List<String>? batch;
+  final List<ChatMessage>? messages;
+  final List<ChatMessage>? batch;
 
   final String? model;
   final int? maxCompletionTokens;
@@ -549,7 +548,7 @@ class ChatParam {
   final ReasoningEffort? reasoning;
   final List<int>? stopSequence;
   final Map<String, dynamic>? additional;
-  final String? system;
+  final String? systemPrompt;
 
   ChatParam({
     required this.messages,
@@ -560,6 +559,26 @@ class ChatParam {
     this.stopSequence,
     this.maxTokens,
     this.maxCompletionTokens,
-    this.system,
+    this.systemPrompt,
   });
+
+  factory ChatParam.openAi({
+    required List<ChatMessage> messages,
+    required String model,
+    ReasoningEffort reasoning = ReasoningEffort.none,
+    int? maxTokens,
+    int? maxCompletionTokens,
+    List<int>? stopSequence,
+    Map<String, dynamic>? additional,
+    String? system,
+  }) => ChatParam(
+    messages: messages,
+    model: model,
+    maxTokens: maxTokens,
+    maxCompletionTokens: maxCompletionTokens,
+    reasoning: reasoning,
+    stopSequence: stopSequence,
+    additional: additional,
+    systemPrompt: system,
+  );
 }
