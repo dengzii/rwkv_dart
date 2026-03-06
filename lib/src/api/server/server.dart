@@ -6,42 +6,67 @@ import 'package:rwkv_dart/src/api/bean/openai/choices_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/chunk_data_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/completion_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/delta_bean.dart';
+import 'package:rwkv_dart/src/api/bean/openai/openai_model_bean.dart';
 import 'package:rwkv_dart/src/api/common/id.dart';
 import 'package:rwkv_dart/src/api/common/sse.dart';
 import 'package:rwkv_dart/src/logger.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
-class _RWKVInstance {
+class HttpServiceModelInstance {
   final RWKV rwkv;
   final ModelBean info;
+  final bool fromConfigFile;
 
-  _RWKVInstance({required this.rwkv, required this.info});
+  HttpServiceModelInstance({
+    required this.rwkv,
+    required this.info,
+    this.fromConfigFile = false,
+  });
 }
 
-class RwkvService {
-  static final Map<String, _RWKVInstance> _instances = {};
-  static String _modelListPath = '';
+class RwkvHttpApiService {
+  final Map<String, HttpServiceModelInstance> _instances = {};
+  String _modelListPath = '';
 
-  static List<ModelBean> _models = [];
+  List<ModelBean> _models = [];
 
-  static Future<void> run({
+  HttpServer? _server;
+
+  Future shutdown() async {
+    await _server?.close(force: true);
+    _server = null;
+  }
+
+  void updateInstances(List<HttpServiceModelInstance> instances) {
+    for (final inst in _instances.values) {
+      if (inst.fromConfigFile) {
+        inst.rwkv.release();
+      }
+    }
+
+    _instances.clear();
+    for (final inst in instances) {
+      _instances[inst.info.id] = inst;
+    }
+  }
+
+  Future<void> run({
     required String host,
     int port = 8000,
-    required String accessKey,
+    String accessKey = '',
     String modelListPath = '',
-    Map<ModelBean, RWKV> instances = const {},
+    List<HttpServiceModelInstance> instances = const [],
   }) async {
     _modelListPath = modelListPath;
 
     _instances.clear();
-    for (final entry in instances.entries) {
-      _instances[entry.key.id] = _RWKVInstance(
-        rwkv: entry.value,
-        info: entry.key,
-      );
+    for (final inst in instances) {
+      _instances[inst.info.id] = inst;
     }
-    await _launchInstance();
+    if (_modelListPath.isNotEmpty) {
+      await _launchInstance();
+    }
 
     var handler = const Pipeline()
         .addMiddleware(logRequests())
@@ -55,11 +80,10 @@ class RwkvService {
             case 'health':
               return Response.ok('rwkv');
             case 'v1/models':
-              final map = {'data': _models.map((e) => e.toJson()).toList()};
-              return Response.ok(jsonEncode(map));
+              return _modelList();
             case 'v1/completions':
             case 'v1/chat/completions':
-              return _SSE().handle(request);
+              return _SSE(service: this).handle(request);
             case 'v1/responses':
               print(await request.readAsString());
               return Response.ok('');
@@ -68,11 +92,29 @@ class RwkvService {
           }
         });
     logd('run service on ${host}:${port}');
-    final server = await shelf_io.serve(handler, host, port);
-    server.autoCompress = false;
+    _server = await shelf_io.serve(handler, host, port);
   }
 
-  static Future _launchInstance() async {
+  Response _modelList() {
+    final map = {
+      'data': _models
+          .map(
+            (e) => {
+              ...OpenaiModelBean(
+                ownedBy: 'rwkv_dart',
+                id: e.id,
+                object: 'model',
+              ).toJson(),
+              'model_size': e.modelSize,
+              'file_size': e.fileSize,
+            },
+          )
+          .toList(),
+    };
+    return Response.ok(jsonEncode(map));
+  }
+
+  Future _launchInstance() async {
     final json = await File(_modelListPath).readAsString();
     final modelList = jsonDecode(json)['models'] as List<dynamic>;
     _models = modelList.map(ModelBean.fromJson).toList();
@@ -83,7 +125,11 @@ class RwkvService {
       await rwkv.loadModel(
         LoadModelParam(modelPath: model.path, tokenizerPath: model.tokenizer),
       );
-      final instance = _RWKVInstance(rwkv: rwkv, info: model);
+      final instance = HttpServiceModelInstance(
+        rwkv: rwkv,
+        info: model,
+        fromConfigFile: true,
+      );
       _instances[model.id] = instance;
     }
     logd('launch instance done: ${_instances.length}');
@@ -111,14 +157,15 @@ Middleware cross({void Function(String message, bool isError)? logger}) =>
     };
 
 class _SSE extends SseHandler {
-  late final _RWKVInstance instance;
+  late final HttpServiceModelInstance instance;
   ChatParam? chatParam;
   GenerationParam? genParam;
 
+  final RwkvHttpApiService service;
   bool _closeNormal = false;
   bool _ready = false;
 
-  _SSE() : super(id: 'chatcmpl-${generateId()}');
+  _SSE({required this.service}) : super(id: 'chatcmpl-${generateId()}');
 
   @override
   Future onConnectionReady(Request req) async {
@@ -165,7 +212,12 @@ class _SSE extends SseHandler {
     if (chatParam == null && genParam == null) {
       throw 'invalid request';
     }
-    instance = RwkvService._instances[completion.model]!;
+
+    if (service._instances[completion.model] == null) {
+      throw 'invalid model';
+    }
+
+    instance = service._instances[completion.model]!;
     _ready = true;
     logd('sse connection ready, $id\n$body');
   }

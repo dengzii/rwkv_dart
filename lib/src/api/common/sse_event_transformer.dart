@@ -109,7 +109,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
           }
 
           /// Avoid emit empty content
-          if (text.isEmpty && batch == 1) {
+          if (text.isEmpty && (batch == 1 || batch == null)) {
             continue;
           }
 
