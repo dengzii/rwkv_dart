@@ -93,18 +93,28 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
 
       try {
         final map = jsonDecode(data.trim()) as Map<String, dynamic>;
+        final isCompletion = map['object'] == 'text_completion';
         final choices = map['choices'] as List<dynamic>?;
         if (choices != null) {
           String text = '';
           if (batch == 1 || batch == null) {
-            final choice = choices.first as Map<String, dynamic>;
-            final delta = choice['delta'] as Map<String, dynamic>?;
-            text = _resolveContent(delta);
+            if (isCompletion) {
+              text = choices.first['text'];
+            } else {
+              final choice = choices.first as Map<String, dynamic>;
+              final delta = choice['delta'] as Map<String, dynamic>?;
+              text = _resolveContent(delta);
+            }
           } else {
             for (final choice in choices) {
               final index = choice['index'] as int;
-              final delta = choice['delta']?['content'] ?? '';
-              choiceList[index] = delta;
+              if (isCompletion) {
+                final delta = choice['text'] ?? '';
+                choiceList[index] = delta;
+              } else {
+                final delta = choice['delta']?['content'] ?? '';
+                choiceList[index] = delta;
+              }
             }
           }
 

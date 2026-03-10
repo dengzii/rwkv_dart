@@ -46,8 +46,10 @@ class RwkvHttpApiService {
     }
 
     _instances.clear();
+    _models.clear();
     for (final inst in instances) {
       _instances[inst.info.id] = inst;
+      _models.add(inst.info);
     }
   }
 
@@ -72,25 +74,25 @@ class RwkvHttpApiService {
         .addMiddleware(logRequests())
         .addMiddleware(cross())
         .addHandler((request) async {
-          if (request.method == 'OPTIONS') {
-            return Response.ok('');
-          }
+      if (request.method == 'OPTIONS') {
+        return Response.ok('');
+      }
 
-          switch (request.url.path) {
-            case 'health':
-              return Response.ok('rwkv');
-            case 'v1/models':
-              return _modelList();
-            case 'v1/completions':
-            case 'v1/chat/completions':
-              return _SSE(service: this).handle(request);
-            case 'v1/responses':
-              print(await request.readAsString());
-              return Response.ok('');
-            default:
-              return Response.notFound('Not found');
-          }
-        });
+      switch (request.url.path) {
+        case 'health':
+          return Response.ok('rwkv');
+        case 'v1/models':
+          return _modelList();
+        case 'v1/completions':
+        case 'v1/chat/completions':
+          return _SSE(service: this).handle(request);
+        case 'v1/responses':
+          print(await request.readAsString());
+          return Response.ok('');
+        default:
+          return Response.notFound('Not found');
+      }
+    });
     logd('run service on ${host}:${port}');
     _server = await shelf_io.serve(handler, host, port);
   }
@@ -99,16 +101,17 @@ class RwkvHttpApiService {
     final map = {
       'data': _models
           .map(
-            (e) => {
-              ...OpenaiModelBean(
-                ownedBy: 'rwkv_dart',
-                id: e.id,
-                object: 'model',
-              ).toJson(),
-              'model_size': e.modelSize,
-              'file_size': e.fileSize,
-            },
-          )
+            (e) =>
+        {
+          ...OpenaiModelBean(
+            ownedBy: 'rwkv_dart',
+            id: e.id,
+            object: 'model',
+          ).toJson(),
+          'model_size': e.modelSize,
+          'file_size': e.fileSize,
+        },
+      )
           .toList(),
     };
     return Response.ok(jsonEncode(map));
@@ -137,7 +140,7 @@ class RwkvHttpApiService {
 }
 
 Middleware cross({void Function(String message, bool isError)? logger}) =>
-    (innerHandler) {
+        (innerHandler) {
       return (request) async {
         Response resp = await innerHandler(request);
         final hasType = resp.headers.containsKey(HttpHeaders.contentTypeHeader);
@@ -146,7 +149,7 @@ Middleware cross({void Function(String message, bool isError)? logger}) =>
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
             'Access-Control-Allow-Headers':
-                'Content-Type, Authorization, x-access-key, Cache-Control',
+            'Content-Type, Authorization, x-access-key, Cache-Control',
             'Access-Control-Max-Age': '3600',
             'Access-Control-Allow-Credentials': 'true',
             if (!hasType) 'Content-Type': 'application/json',
@@ -185,15 +188,17 @@ class _SSE extends SseHandler {
 
     if (completion.messages.isNotEmpty) {
       final ms = completion.messages.toList();
-      final system = ms.where((e) => e.role == 'system').firstOrNull;
+      final system = ms
+          .where((e) => e.role == 'system')
+          .firstOrNull;
       if (system != null) {
         ms.remove(system);
       }
       final reasoning = completion.reasoningEffort == null
           ? null
           : ReasoningEffort.values
-                .where((e) => e.name == completion.reasoningEffort)
-                .firstOrNull;
+          .where((e) => e.name == completion.reasoningEffort)
+          .firstOrNull;
       final cm = ms
           .map((e) => ChatMessage(role: e.role, content: e.content))
           .toList();
@@ -234,7 +239,9 @@ class _SSE extends SseHandler {
 
   @override
   Stream<SseEvent> emitting(Request req) async* {
-    final created = (DateTime.now().millisecondsSinceEpoch / 1000).toInt();
+    final created = (DateTime
+        .now()
+        .millisecondsSinceEpoch / 1000).toInt();
     final isChat = chatParam != null;
     logd('handle ${isChat ? 'chat' : 'gen'}: ${instance.info.id}, $id');
 
