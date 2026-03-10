@@ -253,7 +253,7 @@ class RWKVBackend implements RWKV {
     }
     final numInputs = history.length;
 
-    _checkGenerationState();
+    await _checkGenerationState();
 
     if (param.maxTokens != null) {
       decodeParam = decodeParam.copyWith(maxTokens: param.maxTokens);
@@ -261,7 +261,9 @@ class RWKVBackend implements RWKV {
 
     if (param.systemPrompt != null) {
       await setGenerationConfig(
-        generationParam.copyWith(prompt: 'System: ${param.systemPrompt?.trim()}'),
+        generationParam.copyWith(
+          prompt: 'System: ${param.systemPrompt?.trim()}',
+        ),
       );
     }
 
@@ -318,7 +320,7 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<GenerationResponse> generate(GenerationParam param) {
+  Stream<GenerationResponse> generate(GenerationParam param) async* {
     final prompt = param.prompt;
     logd(
       'generate start, '
@@ -329,7 +331,7 @@ class RWKVBackend implements RWKV {
     );
 
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
-    _checkGenerationState();
+    await _checkGenerationState();
 
     final retVal = _rwkv.rwkvmobile_runtime_gen_completion_async(
       _handle,
@@ -345,7 +347,7 @@ class RWKVBackend implements RWKV {
     if (generationParam.returnWholeGeneratedResult) {
       _generationPosition = prompt.length;
     }
-    return _pollingGenerationResult().cast();
+    yield* _pollingGenerationResult().cast();
   }
 
   @override
@@ -525,9 +527,13 @@ class RWKVBackend implements RWKV {
     String text = _utf8codec.decode(bytes).trimLeft();
 
     if (!generationParam.returnWholeGeneratedResult) {
-      final append = text.substring(_generationPosition);
-      _generationPosition = text.length;
-      text = append;
+      if (_generationPosition < text.length) {
+        final append = text.substring(_generationPosition);
+        _generationPosition = text.length;
+        text = append;
+      } else {
+        text = '';
+      }
     }
     return GenerationResponse(
       text: text,
@@ -553,9 +559,10 @@ class RWKVBackend implements RWKV {
     return samples;
   }
 
-  void _checkGenerationState() {
+  Future _checkGenerationState() async {
     if (_rwkv.rwkvmobile_runtime_is_generating(_handle, _modelId) != 0) {
-      throw Exception('LLM is already generating');
+      // throw Exception('LLM is already generating');
+      await stopGenerate();
     }
   }
 

@@ -1,4 +1,5 @@
 import 'delta_bean.dart';
+import 'messages_bean.dart';
 
 @pragma("json_id:18e504b265f8647270317a50e174459e")
 class ChoicesBean {
@@ -7,6 +8,7 @@ class ChoicesBean {
   final dynamic logprobs;
   final String? text;
   final DeltaBean? delta;
+  final MessageBean? message;
 
   ChoicesBean({
     required this.finishReason,
@@ -14,6 +16,7 @@ class ChoicesBean {
     required this.logprobs,
     this.text,
     this.delta,
+    this.message,
   });
 
   factory ChoicesBean.fromJson(dynamic data) {
@@ -23,6 +26,9 @@ class ChoicesBean {
       index: json['index'] ?? 0,
       logprobs: json['logprobs'] ?? null,
       delta: json['delta'] != null ? DeltaBean.fromJson(json['delta']) : null,
+      message: json['message'] != null
+          ? MessageBean.fromJson(json['message'])
+          : null,
       text: json['text'],
     );
   }
@@ -33,8 +39,8 @@ class ChoicesBean {
     data['index'] = index;
     data['logprobs'] = logprobs;
     data['delta'] = delta?.toJson();
+    data['message'] = message?.toJson();
     data['text'] = text;
     return data;
   }
-
 }

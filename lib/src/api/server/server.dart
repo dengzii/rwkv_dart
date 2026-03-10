@@ -4,11 +4,12 @@ import 'dart:io';
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/bean/openai/choices_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/chunk_data_bean.dart';
-import 'package:rwkv_dart/src/api/bean/openai/completion_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/delta_bean.dart';
+import 'package:rwkv_dart/src/api/bean/openai/messages_bean.dart';
 import 'package:rwkv_dart/src/api/bean/openai/openai_model_bean.dart';
 import 'package:rwkv_dart/src/api/common/id.dart';
 import 'package:rwkv_dart/src/api/common/sse.dart';
+import 'package:rwkv_dart/src/api/server/request.dart';
 import 'package:rwkv_dart/src/logger.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -74,25 +75,24 @@ class RwkvHttpApiService {
         .addMiddleware(logRequests())
         .addMiddleware(cross())
         .addHandler((request) async {
-      if (request.method == 'OPTIONS') {
-        return Response.ok('');
-      }
-
-      switch (request.url.path) {
-        case 'health':
-          return Response.ok('rwkv');
-        case 'v1/models':
-          return _modelList();
-        case 'v1/completions':
-        case 'v1/chat/completions':
-          return _SSE(service: this).handle(request);
-        case 'v1/responses':
-          print(await request.readAsString());
-          return Response.ok('');
-        default:
-          return Response.notFound('Not found');
-      }
-    });
+          if (request.method == 'OPTIONS') {
+            return Response.ok('');
+          }
+          switch (request.url.path) {
+            case 'health':
+              return Response.ok('rwkv');
+            case 'v1/models':
+              return _modelList();
+            case 'v1/completions':
+            case 'v1/chat/completions':
+              return _completion(request);
+            case 'v1/responses':
+              print(await request.readAsString());
+              return Response.ok('');
+            default:
+              return Response.notFound('Not found');
+          }
+        });
     logd('run service on ${host}:${port}');
     _server = await shelf_io.serve(handler, host, port);
   }
@@ -101,20 +101,110 @@ class RwkvHttpApiService {
     final map = {
       'data': _models
           .map(
-            (e) =>
-        {
-          ...OpenaiModelBean(
-            ownedBy: 'rwkv_dart',
-            id: e.id,
-            object: 'model',
-          ).toJson(),
-          'model_size': e.modelSize,
-          'file_size': e.fileSize,
-        },
-      )
+            (e) => {
+              ...OpenaiModelBean(
+                ownedBy: 'rwkv_dart',
+                id: e.id,
+                object: 'model',
+              ).toJson(),
+              'model_size': e.modelSize,
+              'file_size': e.fileSize,
+            },
+          )
           .toList(),
     };
     return Response.ok(jsonEncode(map));
+  }
+
+  Future<Response> _completion(Request request) async {
+    try {
+      final parsed = await ParsedRequest.parse(request);
+      final modelId = parsed.modelId;
+      final instance = modelId == null ? null : _instances[modelId];
+      if (instance == null) {
+        return Response.notFound(
+          jsonEncode({
+            'error': {'message': 'model not found: $modelId'},
+          }),
+        );
+      }
+      if (parsed.stream) {
+        return _SSE(instance: instance, parsed: parsed).handle(request);
+      }
+      return _nonStreamingCompletion(instance: instance, parsed: parsed);
+    } catch (e, s) {
+      loge(s);
+      return Response.badRequest(
+        body: jsonEncode({
+          'error': {'message': '$e'},
+        }),
+      );
+    }
+  }
+
+  Future<Response> _nonStreamingCompletion({
+    required HttpServiceModelInstance instance,
+    required ParsedRequest parsed,
+  }) async {
+    final created = (DateTime.now().millisecondsSinceEpoch / 1000).toInt();
+    final isChat = parsed.chatParam != null;
+    logd('handle non-stream ${isChat ? 'chat' : 'gen'}: ${instance.info.id}');
+
+    final stream = isChat
+        ? await instance.rwkv.chat(parsed.chatParam!)
+        : await instance.rwkv.generate(parsed.genParam!);
+
+    final content = StringBuffer();
+    StopReason stopReason = StopReason.none;
+    await for (final resp in stream) {
+      if (resp.text.isNotEmpty) {
+        content.write(resp.text);
+      }
+      if (resp.stopReason != StopReason.none) {
+        stopReason = resp.stopReason;
+      }
+    }
+
+    final finishReason = _mapFinishReason(stopReason);
+    final text = content.toString();
+    final bean = ChunkDataBean(
+      created: created,
+      model: instance.info.id,
+      id: 'chatcmpl-${generateId()}',
+      systemFingerprint: instance.info.id,
+      object: isChat ? 'chat.completion' : 'text_completion',
+      choices: [
+        ChoicesBean(
+          index: 0,
+          text: isChat ? null : text,
+          delta: null,
+          message: isChat
+              ? MessageBean(role: 'assistant', content: text)
+              : null,
+          finishReason: finishReason,
+          logprobs: null,
+        ),
+      ],
+    );
+    return Response.ok(jsonEncode(bean.toJson()));
+  }
+
+  String? _mapFinishReason(StopReason stopReason) {
+    switch (stopReason) {
+      case StopReason.maxTokens:
+        return 'length';
+      case StopReason.canceled:
+        return 'cancelled';
+      case StopReason.error:
+        return 'error';
+      case StopReason.timeout:
+        return 'timeout';
+      case StopReason.eos:
+      case StopReason.unknown:
+        return 'stop';
+      case StopReason.none:
+        return null;
+    }
   }
 
   Future _launchInstance() async {
@@ -140,16 +230,17 @@ class RwkvHttpApiService {
 }
 
 Middleware cross({void Function(String message, bool isError)? logger}) =>
-        (innerHandler) {
+    (innerHandler) {
       return (request) async {
         Response resp = await innerHandler(request);
         final hasType = resp.headers.containsKey(HttpHeaders.contentTypeHeader);
+        final origin = request.requestedUri.origin;
         resp = resp.change(
           headers: {
-            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Origin': '$origin',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
             'Access-Control-Allow-Headers':
-            'Content-Type, Authorization, x-access-key, Cache-Control',
+                'Content-Type, Authorization, x-access-key, Cache-Control',
             'Access-Control-Max-Age': '3600',
             'Access-Control-Allow-Credentials': 'true',
             if (!hasType) 'Content-Type': 'application/json',
@@ -160,71 +251,19 @@ Middleware cross({void Function(String message, bool isError)? logger}) =>
     };
 
 class _SSE extends SseHandler {
-  late final HttpServiceModelInstance instance;
-  ChatParam? chatParam;
-  GenerationParam? genParam;
-
-  final RwkvHttpApiService service;
+  final HttpServiceModelInstance instance;
+  final ParsedRequest parsed;
   bool _closeNormal = false;
   bool _ready = false;
 
-  _SSE({required this.service}) : super(id: 'chatcmpl-${generateId()}');
+  _SSE({required this.instance, required this.parsed})
+    : super(id: 'chatcmpl-${generateId()}');
 
   @override
   Future onConnectionReady(Request req) async {
     super.onConnectionReady(req);
-
-    final body = await req.readAsString();
-
-    if (body.isEmpty) {
-      logw('request body is empty');
-      write(SseEvent.error('body is empty'));
-      close();
-      return;
-    }
-
-    final json = jsonDecode(body);
-    final completion = CompletionBean.fromJson(json);
-
-    if (completion.messages.isNotEmpty) {
-      final ms = completion.messages.toList();
-      final system = ms
-          .where((e) => e.role == 'system')
-          .firstOrNull;
-      if (system != null) {
-        ms.remove(system);
-      }
-      final reasoning = completion.reasoningEffort == null
-          ? null
-          : ReasoningEffort.values
-          .where((e) => e.name == completion.reasoningEffort)
-          .firstOrNull;
-      final cm = ms
-          .map((e) => ChatMessage(role: e.role, content: e.content))
-          .toList();
-      chatParam = ChatParam(
-        model: completion.model,
-        systemPrompt: system?.content,
-        reasoning: reasoning,
-        messages: cm,
-      );
-    } else if (completion.prompt != null) {
-      genParam = GenerationParam(
-        model: completion.model,
-        prompt: completion.prompt!,
-      );
-    }
-    if (chatParam == null && genParam == null) {
-      throw 'invalid request';
-    }
-
-    if (service._instances[completion.model] == null) {
-      throw 'invalid model';
-    }
-
-    instance = service._instances[completion.model]!;
     _ready = true;
-    logd('sse connection ready, $id\n$body');
+    logd('sse connection ready, $id\n${parsed.raw}');
   }
 
   @override
@@ -239,10 +278,8 @@ class _SSE extends SseHandler {
 
   @override
   Stream<SseEvent> emitting(Request req) async* {
-    final created = (DateTime
-        .now()
-        .millisecondsSinceEpoch / 1000).toInt();
-    final isChat = chatParam != null;
+    final created = (DateTime.now().millisecondsSinceEpoch / 1000).toInt();
+    final isChat = parsed.chatParam != null;
     logd('handle ${isChat ? 'chat' : 'gen'}: ${instance.info.id}, $id');
 
     if (!_ready) {
@@ -253,8 +290,8 @@ class _SSE extends SseHandler {
     final object = !isChat ? 'text_completion' : 'chat.completion.chunk';
 
     final stream = !isChat
-        ? await instance.rwkv.generate(genParam!)
-        : await instance.rwkv.chat(chatParam!);
+        ? await instance.rwkv.generate(parsed.genParam!)
+        : await instance.rwkv.chat(parsed.chatParam!);
 
     await for (final resp in stream) {
       final bean = ChunkDataBean(
