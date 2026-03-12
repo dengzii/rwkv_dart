@@ -17,7 +17,6 @@ class AlbatrossClient implements RWKV {
   final String baseUrl;
   final String? password;
 
-  GenerationConfig _config = GenerationConfig.initial();
   DecodeParam _decodeParam = DecodeParam.initial();
 
   CancelToken? _cancelToken;
@@ -55,9 +54,7 @@ class AlbatrossClient implements RWKV {
       stream: request.stream,
       chunkSize: request.chunkSize,
       padZero: request.padZero,
-      enableThink:
-          request.enableThink ??
-          _config.reasoningEffort != ReasoningEffort.none,
+      enableThink: request.enableThink,
       sessionId: request.sessionId,
       dialogueIdx: request.dialogueIdx,
       password: request.password,
@@ -483,8 +480,14 @@ class AlbatrossClient implements RWKV {
     // Use v3 API for chat by default (optimized for BatchSize=1)
     // Convert ChatParam to ChatRequest
     final messages = <MessageBean>[];
-    if (param.systemPrompt != null && param.systemPrompt!.trim().isNotEmpty) {
-      messages.add(MessageBean(role: 'system', content: param.systemPrompt!));
+    if (param.prompt != null && param.prompt!.trim().isNotEmpty) {
+      messages.add(MessageBean(role: 'system', content: param.prompt!));
+    }
+    if (param.generationPrompt != null &&
+        param.generationPrompt!.trim().isNotEmpty) {
+      messages.add(
+        MessageBean(role: 'system', content: param.generationPrompt!.trim()),
+      );
     }
     for (final m in param.messages ?? []) {
       messages.add(MessageBean(role: m.role, content: m.content));
@@ -509,7 +512,9 @@ class AlbatrossClient implements RWKV {
       stopTokens: param.stopSequence?.map((e) => e.hashCode).toList(),
       stream: true,
       enableThink: param.reasoning == null
-          ? null
+          ? (param.reasoning == null
+                ? null
+                : param.reasoning != ReasoningEffort.none)
           : param.reasoning != ReasoningEffort.none,
     );
 
@@ -524,8 +529,17 @@ class AlbatrossClient implements RWKV {
   Stream<GenerationResponse> generate(GenerationParam param) async* {
     // Use v3 API with contents format
     final request = ChatRequest(
-      contents: [param.prompt],
-      maxTokens: param.maxTokens ?? _decodeParam.maxTokens,
+      contents: [
+        if (param.generationPrompt != null &&
+            param.generationPrompt!.trim().isNotEmpty)
+          '${param.generationPrompt!.trim()}\n${param.prompt}'
+        else
+          param.prompt,
+      ],
+      maxTokens:
+          param.maxCompletionTokens ??
+          param.maxTokens ??
+          _decodeParam.maxTokens,
       temperature: _decodeParam.temperature,
       topK: _decodeParam.topK,
       topP: _decodeParam.topP,
@@ -533,6 +547,9 @@ class AlbatrossClient implements RWKV {
       alphaFrequency: _decodeParam.frequencyPenalty,
       stopTokens: param.stopSequence?.map((e) => e.hashCode).toList(),
       stream: true,
+      enableThink: param.reasoningEffort == null
+          ? null
+          : param.reasoningEffort != ReasoningEffort.none,
     );
 
     yield* chatV3Stream(request);
@@ -561,12 +578,6 @@ class AlbatrossClient implements RWKV {
   Future<dynamic> stopGenerate() async {
     _cancelToken?.cancel();
     _cancelToken = null;
-    return null;
-  }
-
-  @override
-  Future<dynamic> setGenerationConfig(GenerationConfig param) async {
-    _config = param;
     return null;
   }
 

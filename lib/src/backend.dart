@@ -64,6 +64,85 @@ extension _Ext2 on DecodeParam {
     ..penalty_decay = penaltyDecay;
 }
 
+class GenerationConfig {
+  final bool addGenerationPrompt;
+
+  final ReasoningEffort reasoningEffort;
+  final int completionStopToken;
+
+  final String prompt;
+
+  //
+  final String thinkingToken;
+
+  // \x17
+  final String? eosToken;
+
+  // \x16
+  final String? bosToken;
+
+  final List<int> tokenBanned;
+
+  final bool returnWholeGeneratedResult;
+
+  final bool spaceAfterRole;
+
+  GenerationConfig({
+    required this.thinkingToken,
+    required this.completionStopToken,
+    required this.prompt,
+    required this.returnWholeGeneratedResult,
+    required this.reasoningEffort,
+    this.addGenerationPrompt = false,
+    this.tokenBanned = const [],
+    this.spaceAfterRole = true,
+    this.eosToken,
+    this.bosToken,
+  });
+
+  factory GenerationConfig.initial() {
+    return GenerationConfig(
+      thinkingToken: "",
+      reasoningEffort: ReasoningEffort.none,
+      completionStopToken: 0,
+      prompt: "",
+      returnWholeGeneratedResult: false,
+    );
+  }
+
+  GenerationConfig copyWith({
+    String? thinkingToken,
+    int? completionStopToken,
+    String? prompt,
+    bool? returnWholeGeneratedResult,
+    ReasoningEffort? reasoningEffort,
+    bool? addGenerationPrompt,
+    List<int>? tokenBanned,
+    bool? spaceAfterRole,
+    String? eosToken,
+    String? bosToken,
+  }) {
+    return GenerationConfig(
+      thinkingToken: thinkingToken ?? this.thinkingToken,
+      completionStopToken: completionStopToken ?? this.completionStopToken,
+      prompt: prompt ?? this.prompt,
+      returnWholeGeneratedResult:
+          returnWholeGeneratedResult ?? this.returnWholeGeneratedResult,
+      reasoningEffort: reasoningEffort ?? this.reasoningEffort,
+      addGenerationPrompt: addGenerationPrompt ?? this.addGenerationPrompt,
+      tokenBanned: tokenBanned ?? this.tokenBanned,
+      spaceAfterRole: spaceAfterRole ?? this.spaceAfterRole,
+      eosToken: eosToken ?? this.eosToken,
+      bosToken: bosToken ?? this.bosToken,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'GenerationConfig{reasoningEffort: $reasoningEffort, completionStopToken: $completionStopToken, prompt: $prompt, thinkingToken: $thinkingToken, eosToken: $eosToken, bosToken: $bosToken, tokenBanned: $tokenBanned, returnWholeGeneratedResult: $returnWholeGeneratedResult, spaceAfterRole: $spaceAfterRole}, addGenerationPrompt: $addGenerationPrompt';
+  }
+}
+
 class RWKVBackend implements RWKV {
   final _utf8codec = Utf8Codec(allowMalformed: true);
 
@@ -262,6 +341,7 @@ class RWKVBackend implements RWKV {
     logd(
       'model loaded, id:$_modelId, backend:${backend.name}, path:${param.modelPath}, ${param.tokenizerPath}',
     );
+    _applyGenerationConfig(generationParam.copyWith(thinkingToken: "<think>"));
     return _modelId;
   }
 
@@ -274,26 +354,17 @@ class RWKVBackend implements RWKV {
   @override
   Stream<GenerationResponse> chat(ChatParam param) async* {
     final history = param.messages!.map((e) => e.content).toList();
+    final generationConfig = _chatGenerationConfig(param);
+    final maxTokens = param.maxTokens ?? decodeParam.maxTokens;
 
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
 
     await _checkGenerationState();
-
-    if (param.maxTokens != null) {
-      decodeParam = decodeParam.copyWith(maxTokens: param.maxTokens);
-    }
-
-    if (param.systemPrompt != null) {
-      await setGenerationConfig(
-        generationParam.copyWith(
-          prompt: 'System: ${param.systemPrompt?.trim()}',
-        ),
-      );
-    }
+    await _applyGenerationConfig(generationConfig);
 
     bool reasoning;
     bool force;
-    switch (param.reasoning ?? generationParam.reasoningEffort) {
+    switch (param.reasoning ?? generationConfig.reasoningEffort) {
       case ReasoningEffort.none:
         reasoning = false;
         force = false;
@@ -328,11 +399,12 @@ class RWKVBackend implements RWKV {
         _modelId,
         inputsPtr,
         numInputs,
-        decodeParam.maxTokens,
+        maxTokens,
         ffi.nullptr,
         reasoning ? 1 : 0,
         force ? 1 : 0,
-        generationParam.addGenerationPrompt ? 1 : 0,
+        FORCE_LANG_NONE,
+        generationConfig.addGenerationPrompt ? 1 : 0,
       );
       _tryThrowErrorRetVal(retVal);
     } finally {
@@ -341,7 +413,7 @@ class RWKVBackend implements RWKV {
 
     final isResume = history.length % 2 == 0;
 
-    if (isResume && !generationParam.returnWholeGeneratedResult) {
+    if (isResume && !generationConfig.returnWholeGeneratedResult) {
       _generationPosition = history.last.length;
     }
     yield* _pollingGenerationResult(resume: isResume).cast();
@@ -361,16 +433,18 @@ class RWKVBackend implements RWKV {
   @override
   Stream<GenerationResponse> generate(GenerationParam param) async* {
     final prompt = param.prompt;
+    final generationConfig = _generateGenerationConfig(param);
     logd(
       'generate start, '
       'model_id=$_modelId, '
       'prompt_len=${prompt.length}, '
-      'max_tokens=${decodeParam.maxTokens}, '
-      'stop_token=${generationParam.completionStopToken}',
+      'max_tokens=${param.maxCompletionTokens ?? param.maxTokens ?? decodeParam.maxTokens}, '
+      'stop_token=${generationConfig.completionStopToken}',
     );
 
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
     await _checkGenerationState();
+    await _applyGenerationConfig(generationConfig);
 
     final arena = Arena();
     try {
@@ -378,8 +452,8 @@ class RWKVBackend implements RWKV {
         _handle,
         _modelId,
         prompt.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
-        param.maxTokens ?? decodeParam.maxTokens,
-        generationParam.completionStopToken,
+        param.maxCompletionTokens ?? param.maxTokens ?? decodeParam.maxTokens,
+        generationConfig.completionStopToken,
         ffi.nullptr,
         1,
       );
@@ -388,7 +462,7 @@ class RWKVBackend implements RWKV {
       arena.releaseAll();
     }
 
-    if (generationParam.returnWholeGeneratedResult) {
+    if (generationConfig.returnWholeGeneratedResult) {
       _generationPosition = prompt.length;
     }
     yield* _pollingGenerationResult().cast();
@@ -415,9 +489,8 @@ class RWKVBackend implements RWKV {
     );
   }
 
-  @override
-  Future setGenerationConfig(GenerationConfig param) async {
-    logd('set generation config: $param');
+  Future _applyGenerationConfig(GenerationConfig param) async {
+    logd('apply generation config: $param');
 
     int retVal = 0;
     final arena = Arena();
@@ -427,6 +500,7 @@ class RWKVBackend implements RWKV {
         final p = param.prompt.endsWith('\n')
             ? param.prompt
             : '${param.prompt}\n';
+        logi('set prompt: $p');
         retVal = _rwkv.rwkvmobile_runtime_set_prompt(
           _handle,
           _modelId,
@@ -436,23 +510,30 @@ class RWKVBackend implements RWKV {
       }
 
       if (param.eosToken != generationParam.eosToken) {
+        logi('set eos token: ${param.eosToken}');
         retVal = _rwkv.rwkvmobile_runtime_set_eos_token(
           _handle,
           _modelId,
-          param.eosToken!.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+          (param.eosToken ?? '')
+              .toNativeUtf8(allocator: arena)
+              .cast<ffi.Char>(),
         );
         _tryThrowErrorRetVal(retVal);
       }
       if (param.bosToken != generationParam.bosToken) {
+        logi('set bos token: ${param.bosToken}');
         retVal = _rwkv.rwkvmobile_runtime_set_bos_token(
           _handle,
           _modelId,
-          param.bosToken!.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+          (param.bosToken ?? '')
+              .toNativeUtf8(allocator: arena)
+              .cast<ffi.Char>(),
         );
         _tryThrowErrorRetVal(retVal);
       }
 
       if (param.tokenBanned != generationParam.tokenBanned) {
+        logi('set token banned: ${param.tokenBanned}');
         final ptr = arena.allocate<ffi.Int>(
           param.tokenBanned.isEmpty ? 1 : param.tokenBanned.length,
         );
@@ -469,6 +550,7 @@ class RWKVBackend implements RWKV {
       }
 
       if (param.thinkingToken != generationParam.thinkingToken) {
+        logi('set thinking token: ${param.thinkingToken}');
         retVal = _rwkv.rwkvmobile_runtime_set_thinking_token(
           _handle,
           _modelId,
@@ -478,6 +560,7 @@ class RWKVBackend implements RWKV {
       }
 
       if (param.spaceAfterRole != generationParam.spaceAfterRole) {
+        logi('set space after role: ${param.spaceAfterRole}');
         retVal = _rwkv.rwkvmobile_runtime_set_space_after_roles(
           _handle,
           _modelId,
@@ -489,6 +572,41 @@ class RWKVBackend implements RWKV {
       arena.releaseAll();
     }
     generationParam = param;
+  }
+
+  GenerationConfig _generateGenerationConfig(GenerationParam param) {
+    return GenerationConfig.initial().copyWith(
+      reasoningEffort: param.reasoningEffort,
+      completionStopToken: param.completionStopToken,
+      prompt: param.generationPrompt,
+      returnWholeGeneratedResult: param.returnWholeGeneratedResult,
+      thinkingToken: param.thinkingToken,
+      addGenerationPrompt: param.addGenerationPrompt,
+      tokenBanned: param.tokenBanned,
+      spaceAfterRole: param.spaceAfterRole,
+      eosToken: param.eosToken,
+      bosToken: param.bosToken,
+    );
+  }
+
+  GenerationConfig _chatGenerationConfig(ChatParam param) {
+    final prompt =
+        param.generationPrompt ??
+        (param.prompt == null || param.prompt!.trim().isEmpty
+            ? null
+            : 'System: ${param.prompt!.trim()}');
+    return GenerationConfig.initial().copyWith(
+      reasoningEffort: param.reasoning,
+      completionStopToken: param.completionStopToken,
+      prompt: prompt,
+      returnWholeGeneratedResult: param.returnWholeGeneratedResult,
+      thinkingToken: param.thinkingToken,
+      addGenerationPrompt: param.addGenerationPrompt,
+      tokenBanned: param.tokenBanned,
+      spaceAfterRole: param.spaceAfterRole,
+      eosToken: param.eosToken,
+      bosToken: param.bosToken,
+    );
   }
 
   @override

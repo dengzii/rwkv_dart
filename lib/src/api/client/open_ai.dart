@@ -18,7 +18,6 @@ class OpenAiApiClient implements RWKV {
   final String url;
   final String apiKey;
 
-  GenerationConfig _config = GenerationConfig.initial();
   DecodeParam _decodeParam = DecodeParam.initial();
   final GenerationState _generationState = GenerationState.initial();
 
@@ -63,13 +62,16 @@ class OpenAiApiClient implements RWKV {
 
     final history = param.messages!;
 
-    final reasoning = param.reasoning?.name ?? _config.reasoningEffort.name;
+    final reasoning = param.reasoning?.name ?? ReasoningEffort.none.name;
     final enableThinking = reasoning != 'none';
 
     final data = {
       'model': param.model!,
       'stream': true,
-      'max_tokens': param.maxTokens ?? _decodeParam.maxTokens,
+      'max_tokens':
+          param.maxCompletionTokens ??
+          param.maxTokens ??
+          _decodeParam.maxTokens,
       'temperature': _decodeParam.temperature,
       'top_p': _decodeParam.topP,
       'frequency_penalty': _decodeParam.frequencyPenalty,
@@ -82,10 +84,11 @@ class OpenAiApiClient implements RWKV {
 
       if (enableThinking) 'reasoning_effort': reasoning,
       'messages': [
-        if (param.systemPrompt != null && param.systemPrompt!.trim().isNotEmpty)
-          {'role': 'system', 'content': param.systemPrompt!.trim()},
-        if (_config.prompt.isNotEmpty)
-          {'role': 'system', 'content': _config.prompt},
+        if (param.prompt != null && param.prompt!.trim().isNotEmpty)
+          {'role': 'system', 'content': param.prompt!.trim()},
+        if (param.generationPrompt != null &&
+            param.generationPrompt!.trim().isNotEmpty)
+          {'role': 'system', 'content': param.generationPrompt!.trim()},
         for (final msg in history) {'role': msg.role, 'content': msg.content},
       ],
     };
@@ -135,14 +138,22 @@ class OpenAiApiClient implements RWKV {
       'model': param.model!,
       'stream': true,
       'seed': null,
-      'max_tokens': param.maxTokens ?? _decodeParam.maxTokens,
+      'max_tokens':
+          param.maxCompletionTokens ??
+          param.maxTokens ??
+          _decodeParam.maxTokens,
       'temperature': _decodeParam.temperature,
       'top_p': _decodeParam.topP,
       'frequency_penalty': _decodeParam.frequencyPenalty,
       'presence_penalty': _decodeParam.presencePenalty,
       'stop': param.stopSequence,
       'penalty_decay': _decodeParam.penaltyDecay,
-      'prompt': param.prompt,
+      'prompt': [
+        if (param.generationPrompt != null &&
+            param.generationPrompt!.trim().isNotEmpty)
+          param.generationPrompt!.trim(),
+        param.prompt,
+      ].join('\n'),
     };
     Response resp;
     try {
@@ -254,11 +265,6 @@ class OpenAiApiClient implements RWKV {
   @override
   Future<dynamic> setDecodeParam(DecodeParam param) async {
     _decodeParam = param;
-  }
-
-  @override
-  Future<dynamic> setGenerationConfig(GenerationConfig param) async {
-    _config = param;
   }
 
   @override

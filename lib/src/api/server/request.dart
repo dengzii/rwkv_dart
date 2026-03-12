@@ -97,7 +97,7 @@ class ParsedRequest {
           .toList();
       chatParam = ChatParam(
         model: completion.model,
-        systemPrompt: system?.content,
+        prompt: system?.content,
         reasoning: reasoning,
         messages: cm,
         maxTokens: maxTokens,

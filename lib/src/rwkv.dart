@@ -26,8 +26,6 @@ abstract class RWKVBase {
   Stream<GenerationResponse> chat(ChatParam param);
 
   Future stopGenerate();
-
-  Future setGenerationConfig(GenerationConfig param);
 }
 
 abstract class RWKV extends RWKVBase {
@@ -286,113 +284,6 @@ enum ReasoningEffort {
       values.where((e) => e.name == name).firstOrNull;
 }
 
-class GenerationConfig {
-  static const thinkingTokenNone = "";
-  static const thinkingTokenFree = r"<think>";
-
-  final bool addGenerationPrompt;
-
-  final ReasoningEffort reasoningEffort;
-  final int completionStopToken;
-
-  // apply to the start of the prompt
-  final String prompt;
-
-  //
-  final String thinkingToken;
-
-  // \x17
-  final String? eosToken;
-
-  // \x16
-  final String? bosToken;
-
-  final List<int> tokenBanned;
-
-  // return whole generated result or only new tokens
-  final bool returnWholeGeneratedResult;
-
-  final bool spaceAfterRole;
-
-  GenerationConfig({
-    required this.thinkingToken,
-    required this.completionStopToken,
-    required this.prompt,
-    required this.returnWholeGeneratedResult,
-    required this.reasoningEffort,
-    this.addGenerationPrompt = false,
-    this.tokenBanned = const [],
-    this.spaceAfterRole = true,
-    this.eosToken,
-    this.bosToken,
-  });
-
-  factory GenerationConfig.initial() {
-    return GenerationConfig(
-      thinkingToken: thinkingTokenNone,
-      reasoningEffort: ReasoningEffort.none,
-      completionStopToken: 0,
-      prompt: "",
-      returnWholeGeneratedResult: false,
-    );
-  }
-
-  GenerationConfig copyWith({
-    int? maxTokens,
-    String? thinkingToken,
-    int? completionStopToken,
-    String? prompt,
-    bool? returnWholeGeneratedResult,
-    ReasoningEffort? reasoningEffort,
-    String? userRole,
-    String? assistantRole,
-  }) {
-    return GenerationConfig(
-      thinkingToken: thinkingToken ?? this.thinkingToken,
-      completionStopToken: completionStopToken ?? this.completionStopToken,
-      prompt: prompt ?? this.prompt,
-      returnWholeGeneratedResult:
-          returnWholeGeneratedResult ?? this.returnWholeGeneratedResult,
-      reasoningEffort: reasoningEffort ?? this.reasoningEffort,
-    );
-  }
-
-  @override
-  String toString() {
-    return 'GenerationConfig{reasoningEffort: $reasoningEffort, completionStopToken: $completionStopToken, prompt: $prompt, thinkingToken: $thinkingToken, eosToken: $eosToken, bosToken: $bosToken, tokenBanned: $tokenBanned, returnWholeGeneratedResult: $returnWholeGeneratedResult, spaceAfterRole: $spaceAfterRole}, addGenerationPrompt: $addGenerationPrompt';
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'reasoningEffort': reasoningEffort.name,
-      'completionStopToken': completionStopToken,
-      'prompt': prompt,
-      'thinkingToken': thinkingToken,
-      'eosToken': eosToken,
-      'bosToken': bosToken,
-      'tokenBanned': tokenBanned,
-      'returnWholeGeneratedResult': returnWholeGeneratedResult,
-      'spaceAfterRole': spaceAfterRole,
-    };
-  }
-
-  factory GenerationConfig.fromMap(dynamic map) {
-    return GenerationConfig(
-      reasoningEffort: ReasoningEffort.values.firstWhere(
-        (e) => e.name == map['reasoningEffort'],
-      ),
-      completionStopToken: map['completionStopToken'] as int,
-      prompt: map['prompt'] as String,
-      thinkingToken: map['thinkingToken'] as String,
-      eosToken: map['eosToken'] as String,
-      bosToken: map['bosToken'] as String,
-      tokenBanned: map['tokenBanned'] as List<int>,
-      returnWholeGeneratedResult: map['returnWholeGeneratedResult'] as bool,
-      spaceAfterRole: map['spaceAfterRole'] as bool,
-    );
-  }
-}
-
 class GenerationState {
   final bool isGenerating;
   final double prefillProgress;
@@ -518,17 +409,37 @@ class GenerationParam {
   final int? maxTokens;
   final int? maxCompletionTokens;
   final String? reasoning;
+  final ReasoningEffort? reasoningEffort;
   final List<int>? stopSequence;
   final Map<String, dynamic>? additional;
+  final int? completionStopToken;
+  final String? generationPrompt;
+  final String? thinkingToken;
+  final String? eosToken;
+  final String? bosToken;
+  final List<int>? tokenBanned;
+  final bool? returnWholeGeneratedResult;
+  final bool? addGenerationPrompt;
+  final bool? spaceAfterRole;
 
-  GenerationParam({
+  const GenerationParam({
     required this.prompt,
     this.model,
     this.maxTokens,
     this.maxCompletionTokens,
     this.reasoning,
+    this.reasoningEffort,
     this.stopSequence,
     this.additional,
+    this.completionStopToken,
+    this.generationPrompt,
+    this.thinkingToken,
+    this.eosToken,
+    this.bosToken,
+    this.tokenBanned,
+    this.returnWholeGeneratedResult,
+    this.addGenerationPrompt,
+    this.spaceAfterRole,
   });
 }
 
@@ -549,9 +460,18 @@ class ChatParam {
   final ReasoningEffort? reasoning;
   final List<int>? stopSequence;
   final Map<String, dynamic>? additional;
-  final String? systemPrompt;
+  final String? prompt;
+  final int? completionStopToken;
+  final String? generationPrompt;
+  final String? thinkingToken;
+  final String? eosToken;
+  final String? bosToken;
+  final List<int>? tokenBanned;
+  final bool? returnWholeGeneratedResult;
+  final bool? addGenerationPrompt;
+  final bool? spaceAfterRole;
 
-  ChatParam({
+  const ChatParam({
     required this.messages,
     this.batch,
     this.model,
@@ -560,7 +480,16 @@ class ChatParam {
     this.stopSequence,
     this.maxTokens,
     this.maxCompletionTokens,
-    this.systemPrompt,
+    this.prompt,
+    this.completionStopToken,
+    this.generationPrompt,
+    this.thinkingToken,
+    this.eosToken,
+    this.bosToken,
+    this.tokenBanned,
+    this.returnWholeGeneratedResult,
+    this.addGenerationPrompt,
+    this.spaceAfterRole,
   });
 
   factory ChatParam.openAi({
@@ -580,6 +509,15 @@ class ChatParam {
     reasoning: reasoning,
     stopSequence: stopSequence,
     additional: additional,
-    systemPrompt: system,
+    prompt: system,
+    completionStopToken: null,
+    generationPrompt: null,
+    thinkingToken: null,
+    eosToken: null,
+    bosToken: null,
+    tokenBanned: null,
+    returnWholeGeneratedResult: null,
+    addGenerationPrompt: null,
+    spaceAfterRole: null,
   );
 }

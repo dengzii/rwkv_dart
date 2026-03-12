@@ -86,11 +86,6 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
-  Future<dynamic> setGenerationConfig(GenerationConfig param) {
-    throw UnimplementedError();
-  }
-
-  @override
   Future<dynamic> setImage(String path) {
     throw UnimplementedError();
   }

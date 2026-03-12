@@ -246,7 +246,6 @@ mixin _ProxyCombinedMixin implements RWKV {
     textToSpeech,
     setImage,
     setDecodeParam,
-    setGenerationConfig,
     getGenerationState,
     generationStateStream,
     stopGenerate,
@@ -307,14 +306,6 @@ mixin _ProxyCombinedMixin implements RWKV {
       return callee!.setDecodeParam(param);
     }
     return _call(setDecodeParam, param);
-  }
-
-  @override
-  Future setGenerationConfig(GenerationConfig param) {
-    if (callee != null) {
-      return callee!.setGenerationConfig(param);
-    }
-    return _call(setGenerationConfig, param);
   }
 
   @override

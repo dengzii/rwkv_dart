@@ -306,6 +306,7 @@ class rwkv_mobile {
       int enable_reasoning,
       int force_reasoning,
       int force_lang,
+      int add_generation_prompt,
       ) {
     return _rwkvmobile_runtime_eval_chat_with_history_async(
       handle,
@@ -317,6 +318,7 @@ class rwkv_mobile {
       enable_reasoning,
       force_reasoning,
       force_lang,
+      add_generation_prompt,
     );
   }
 
@@ -333,6 +335,7 @@ class rwkv_mobile {
               ffi.Int,
               ffi.Int,
               ffi.Int,
+              ffi.Int,
               )
       >
   >('rwkvmobile_runtime_eval_chat_with_history_async');
@@ -345,6 +348,7 @@ class rwkv_mobile {
           int,
           int,
           ffi.Pointer<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Char>, ffi.Int, ffi.Pointer<ffi.Char>)>>,
+          int,
           int,
           int,
           int,
@@ -547,6 +551,7 @@ class rwkv_mobile {
       int enable_reasoning,
       int force_reasoning,
       int force_lang,
+      int add_generation_prompt,
       ) {
     return _rwkvmobile_runtime_eval_chat_batch_with_history_async(
       handle,
@@ -559,6 +564,7 @@ class rwkv_mobile {
       enable_reasoning,
       force_reasoning,
       force_lang,
+      add_generation_prompt,
     );
   }
 
@@ -580,6 +586,7 @@ class rwkv_mobile {
               ffi.Int,
               ffi.Int,
               ffi.Int,
+              ffi.Int,
               )
       >
   >('rwkvmobile_runtime_eval_chat_batch_with_history_async');
@@ -597,6 +604,7 @@ class rwkv_mobile {
                   ffi.Void Function(ffi.Int, ffi.Pointer<ffi.Pointer<ffi.Char>>, ffi.Pointer<ffi.Int>, ffi.Pointer<ffi.Pointer<ffi.Char>>)
               >
           >,
+          int,
           int,
           int,
           int,
@@ -1414,6 +1422,78 @@ class rwkv_mobile {
   late final _rwkvmobile_runtime_get_response_buffer_ids = _rwkvmobile_runtime_get_response_buffer_idsPtr
       .asFunction<token_ids Function(rwkvmobile_runtime_t, int)>();
 
+  int rwkvmobile_runtime_get_response_buffer_tokens_count(
+      rwkvmobile_runtime_t runtime,
+      int model_id,
+      ) {
+    return _rwkvmobile_runtime_get_response_buffer_tokens_count(
+      runtime,
+      model_id,
+    );
+  }
+
+  late final _rwkvmobile_runtime_get_response_buffer_tokens_countPtr =
+  _lookup<ffi.NativeFunction<ffi.Int Function(rwkvmobile_runtime_t, ffi.Int)>>('rwkvmobile_runtime_get_response_buffer_tokens_count');
+  late final _rwkvmobile_runtime_get_response_buffer_tokens_count = _rwkvmobile_runtime_get_response_buffer_tokens_countPtr
+      .asFunction<int Function(rwkvmobile_runtime_t, int)>();
+
+  batch_tokens_count rwkvmobile_runtime_get_response_buffer_tokens_count_batch(
+      rwkvmobile_runtime_t runtime,
+      int model_id,
+      ) {
+    return _rwkvmobile_runtime_get_response_buffer_tokens_count_batch(
+      runtime,
+      model_id,
+    );
+  }
+
+  late final _rwkvmobile_runtime_get_response_buffer_tokens_count_batchPtr =
+  _lookup<ffi.NativeFunction<batch_tokens_count Function(rwkvmobile_runtime_t, ffi.Int)>>(
+    'rwkvmobile_runtime_get_response_buffer_tokens_count_batch',
+  );
+  late final _rwkvmobile_runtime_get_response_buffer_tokens_count_batch = _rwkvmobile_runtime_get_response_buffer_tokens_count_batchPtr
+      .asFunction<batch_tokens_count Function(rwkvmobile_runtime_t, int)>();
+
+  int rwkvmobile_runtime_calculate_tokens_count_from_messages(
+      rwkvmobile_runtime_t runtime,
+      int model_id,
+      ffi.Pointer<ffi.Pointer<ffi.Char>> inputs,
+      int num_inputs,
+      ) {
+    return _rwkvmobile_runtime_calculate_tokens_count_from_messages(
+      runtime,
+      model_id,
+      inputs,
+      num_inputs,
+    );
+  }
+
+  late final _rwkvmobile_runtime_calculate_tokens_count_from_messagesPtr =
+  _lookup<ffi.NativeFunction<ffi.Int Function(rwkvmobile_runtime_t, ffi.Int, ffi.Pointer<ffi.Pointer<ffi.Char>>, ffi.Int)>>(
+    'rwkvmobile_runtime_calculate_tokens_count_from_messages',
+  );
+  late final _rwkvmobile_runtime_calculate_tokens_count_from_messages = _rwkvmobile_runtime_calculate_tokens_count_from_messagesPtr
+      .asFunction<int Function(rwkvmobile_runtime_t, int, ffi.Pointer<ffi.Pointer<ffi.Char>>, int)>();
+
+  int rwkvmobile_runtime_calculate_tokens_count_from_text(
+      rwkvmobile_runtime_t runtime,
+      int model_id,
+      ffi.Pointer<ffi.Char> text,
+      ) {
+    return _rwkvmobile_runtime_calculate_tokens_count_from_text(
+      runtime,
+      model_id,
+      text,
+    );
+  }
+
+  late final _rwkvmobile_runtime_calculate_tokens_count_from_textPtr =
+  _lookup<ffi.NativeFunction<ffi.Int Function(rwkvmobile_runtime_t, ffi.Int, ffi.Pointer<ffi.Char>)>>(
+    'rwkvmobile_runtime_calculate_tokens_count_from_text',
+  );
+  late final _rwkvmobile_runtime_calculate_tokens_count_from_text = _rwkvmobile_runtime_calculate_tokens_count_from_textPtr
+      .asFunction<int Function(rwkvmobile_runtime_t, int, ffi.Pointer<ffi.Char>)>();
+
   void rwkvmobile_runtime_free_token_ids(
       token_ids ids,
       ) {
@@ -2057,6 +2137,13 @@ final class web_rwkv_args extends ffi.Struct {
 
   @ffi.Int()
   external int quant_layers;
+}
+
+final class batch_tokens_count extends ffi.Struct {
+  external ffi.Pointer<ffi.Int32> counts;
+
+  @ffi.Int()
+  external int batch_size;
 }
 
 typedef rwkvmobile_runtime_t = ffi.Pointer<ffi.Void>;
