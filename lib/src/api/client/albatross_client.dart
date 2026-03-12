@@ -309,6 +309,9 @@ class AlbatrossClient implements RWKV {
 
     Response resp;
     try {
+      logi('/v3/chat/completions');
+      logi(data);
+
       _cancelToken = CancelToken();
       resp = await _dio.post(
         '/v3/chat/completions',
@@ -480,6 +483,9 @@ class AlbatrossClient implements RWKV {
     // Use v3 API for chat by default (optimized for BatchSize=1)
     // Convert ChatParam to ChatRequest
     final messages = <MessageBean>[];
+    if (param.systemPrompt != null && param.systemPrompt!.trim().isNotEmpty) {
+      messages.add(MessageBean(role: 'system', content: param.systemPrompt!));
+    }
     for (final m in param.messages ?? []) {
       messages.add(MessageBean(role: m.role, content: m.content));
     }
@@ -509,9 +515,9 @@ class AlbatrossClient implements RWKV {
 
     if (param.batch != null) {
       yield* chatV2Stream(request);
+    } else {
+      yield* chatV3Stream(request);
     }
-
-    yield* chatV3Stream(request);
   }
 
   @override
@@ -529,9 +535,7 @@ class AlbatrossClient implements RWKV {
       stream: true,
     );
 
-    await for (final resp in chatV3Stream(request)) {
-      yield resp.copyWith(text: param.prompt + resp.text);
-    }
+    yield* chatV3Stream(request);
   }
 
   @override

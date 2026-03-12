@@ -12,19 +12,19 @@ import 'package:rwkv_dart/src/rwkv.dart';
 import 'rwkv_mobile_ffi.dart';
 
 enum ErrorFlag {
-  SUCCESS(0),
-  ERROR_IO(1 << 0),
-  ERROR_INIT(1 << 1),
-  ERROR_EVAL(1 << 2),
-  ERROR_INVALID_PARAMETERS(1 << 3),
-  ERROR_BACKEND(1 << 4),
-  ERROR_MODEL(1 << 5),
-  ERROR_TOKENIZER(1 << 6),
-  ERROR_SAMPLER(1 << 7),
-  ERROR_RUNTIME(1 << 8),
-  ERROR_UNSUPPORTED(1 << 9),
-  ERROR_ALLOC(1 << 10),
-  ERROR_RELEASE(1 << 11);
+  success(0),
+  io(1 << 0),
+  init(1 << 1),
+  eval(1 << 2),
+  invalidParameters(1 << 3),
+  backend(1 << 4),
+  model(1 << 5),
+  tokenizer(1 << 6),
+  sampler(1 << 7),
+  runtime(1 << 8),
+  unsupported(1 << 9),
+  alloca(1 << 10),
+  release(1 << 11);
 
   final int code;
 
@@ -46,25 +46,19 @@ enum ErrorFlag {
   }
 }
 
-enum GenerationType { TEXT, TTS, IMAGE }
+enum GenerationType { text, tts, image }
 
-extension _ on String {
-  ffi.Pointer<ffi.Char> toNativeChar() => toNativeUtf8().cast<ffi.Char>();
-
-  ffi.Pointer<ffi.Void> toNativeVoid() => toNativeUtf8().cast<ffi.Void>();
-}
-
-extension __ on ffi.Pointer<ffi.Char> {
+extension _Ext on ffi.Pointer<ffi.Char> {
   String toDartString() => cast<Utf8>().toDartString();
 }
 
-extension ___ on DecodeParam {
-  toNativeSamplerParam() => Struct.create<sampler_params>()
+extension _Ext2 on DecodeParam {
+  sampler_params toNativeSamplerParam() => Struct.create<sampler_params>()
     ..temperature = temperature
     ..top_k = topK
     ..top_p = topP;
 
-  toNativePenaltyParam() => Struct.create<penalty_params>()
+  penalty_params toNativePenaltyParam() => Struct.create<penalty_params>()
     ..presence_penalty = presencePenalty
     ..frequency_penalty = frequencyPenalty
     ..penalty_decay = penaltyDecay;
@@ -88,10 +82,10 @@ class RWKVBackend implements RWKV {
   GenerationConfig generationParam = GenerationConfig.initial();
   DecodeParam decodeParam = DecodeParam.initial();
   GenerationState generationState = GenerationState.initial();
-  StreamController<GenerationState> _controllerGenerationState =
+  final StreamController<GenerationState> _controllerGenerationState =
       StreamController.broadcast();
 
-  RWKVBackend([String? _, String? __]);
+  RWKVBackend([String? _, String? _]);
 
   ffi.DynamicLibrary _loadDynamicLib() {
     ffi.DynamicLibrary openDynamicLib(String file) =>
@@ -125,6 +119,7 @@ class RWKVBackend implements RWKV {
     throw Exception('Unsupported platform');
   }
 
+  @override
   Future init([InitParam? param]) async {
     dynamicLibraryDir = param?.dynamicLibDir ?? '';
 
@@ -137,14 +132,18 @@ class RWKVBackend implements RWKV {
     if (_handle == ffi.nullptr) {
       throw Exception('Failed to initialize RWKV backend');
     }
-    ffi.Pointer<ffi.Char> ptr = malloc.allocate<ffi.Char>(64);
-    final retVal = _rwkv.rwkvmobile_runtime_get_available_backend_names(
-      ptr,
-      64,
-    );
-    _tryThrowErrorRetVal(retVal);
-    final names = ptr.cast<Utf8>().toDartString();
-    logd('ffi initialized, available backend: $names');
+    final ptr = malloc.allocate<ffi.Char>(64);
+    try {
+      final retVal = _rwkv.rwkvmobile_runtime_get_available_backend_names(
+        ptr,
+        64,
+      );
+      _tryThrowErrorRetVal(retVal);
+      final names = ptr.cast<Utf8>().toDartString();
+      logd('ffi initialized, available backend: $names');
+    } finally {
+      malloc.free(ptr);
+    }
   }
 
   @override
@@ -163,6 +162,10 @@ class RWKVBackend implements RWKV {
 
   @override
   Future<int> loadModel(LoadModelParam param) async {
+    if (param.tokenizerPath.isEmpty) {
+      throw Exception('Tokenizer path is required');
+    }
+
     if (_modelId != -1) {
       final retVal = _rwkv.rwkvmobile_runtime_release_model(_handle, _modelId);
       _tryThrowErrorRetVal(retVal);
@@ -171,40 +174,56 @@ class RWKVBackend implements RWKV {
 
     String modelPath = param.modelPath;
 
-    final backend = Backend.fromModelPath(param.modelPath);
+    final backend = param.backend ?? Backend.fromModelPath(param.modelPath);
     if (backend == null) {
       throw Exception(
         'auto detect backend failed for $modelPath, please specify backend explicitly',
       );
     }
 
-    final backendName = backend.name.toNativeChar();
+    final arena = Arena();
+    try {
+      final backendName = backend.name
+          .toNativeUtf8(allocator: arena)
+          .cast<ffi.Char>();
+      final modelPathPtr = modelPath
+          .toNativeUtf8(allocator: arena)
+          .cast<ffi.Char>();
+      final tokenizerPathPtr = param.tokenizerPath
+          .toNativeUtf8(allocator: arena)
+          .cast<ffi.Char>();
 
-    if (param.backend == Backend.qnn) {
-      final qnnLibs = _qnnLibDir;
-      if (qnnLibs == null || qnnLibs.isEmpty) {
-        throw Exception(
-          'qnn libs is required when using qnn backend, set it in InitParam',
+      if (param.backend == Backend.qnn) {
+        final qnnLibs = _qnnLibDir;
+        if (qnnLibs == null || qnnLibs.isEmpty) {
+          throw Exception(
+            'qnn libs is required when using qnn backend, set it in InitParam',
+          );
+        }
+        final qnnLibPtr = qnnLibs
+            .toNativeUtf8(allocator: arena)
+            .cast<ffi.Char>();
+        _rwkv.rwkvmobile_runtime_set_qnn_library_path(_handle, qnnLibPtr);
+        final qnnHtpPath = '$qnnLibs/libQnnHtp.so'
+            .toNativeUtf8(allocator: arena)
+            .cast<ffi.Void>();
+        _modelId = _rwkv.rwkvmobile_runtime_load_model_with_extra(
+          _handle,
+          modelPathPtr,
+          backendName,
+          tokenizerPathPtr,
+          qnnHtpPath,
+        );
+      } else {
+        _modelId = _rwkv.rwkvmobile_runtime_load_model(
+          _handle,
+          modelPathPtr,
+          backendName,
+          tokenizerPathPtr,
         );
       }
-      _rwkv.rwkvmobile_runtime_set_qnn_library_path(
-        _handle,
-        qnnLibs.toNativeChar(),
-      );
-      _modelId = _rwkv.rwkvmobile_runtime_load_model_with_extra(
-        _handle,
-        modelPath.toNativeChar(),
-        backendName,
-        param.tokenizerPath.toNativeChar(),
-        '$qnnLibs/libQnnHtp.so'.toNativeVoid(),
-      );
-    } else {
-      _modelId = _rwkv.rwkvmobile_runtime_load_model(
-        _handle,
-        modelPath.toNativeChar(),
-        backendName,
-        param.tokenizerPath.toNativeChar(),
-      );
+    } finally {
+      arena.releaseAll();
     }
     if (_modelId < 0) {
       throw 'Failed to load model, $_modelId';
@@ -212,20 +231,31 @@ class RWKVBackend implements RWKV {
 
     final ttsConfig = param.ttsModelConfig;
     if (ttsConfig != null) {
-      for (final normalizer in ttsConfig.textNormalizers) {
-        final retVal = _rwkv.rwkvmobile_runtime_tts_register_text_normalizer(
+      final arena = Arena();
+      try {
+        for (final normalizer in ttsConfig.textNormalizers) {
+          final retVal = _rwkv.rwkvmobile_runtime_tts_register_text_normalizer(
+            _handle,
+            normalizer.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+          );
+          _tryThrowErrorRetVal(retVal);
+        }
+        final retVal = _rwkv.rwkvmobile_runtime_sparktts_load_models(
           _handle,
-          normalizer.toNativeChar(),
+          ttsConfig.wav2vec2ModelPath
+              .toNativeUtf8(allocator: arena)
+              .cast<ffi.Char>(),
+          ttsConfig.biCodecTokenizerPath
+              .toNativeUtf8(allocator: arena)
+              .cast<ffi.Char>(),
+          ttsConfig.biCodecDetokenizerPath
+              .toNativeUtf8(allocator: arena)
+              .cast<ffi.Char>(),
         );
         _tryThrowErrorRetVal(retVal);
+      } finally {
+        arena.releaseAll();
       }
-      final retVal = _rwkv.rwkvmobile_runtime_sparktts_load_models(
-        _handle,
-        ttsConfig.wav2vec2ModelPath.toNativeChar(),
-        ttsConfig.biCodecTokenizerPath.toNativeChar(),
-        ttsConfig.biCodecDetokenizerPath.toNativeChar(),
-      );
-      _tryThrowErrorRetVal(retVal);
       logd('tts model loaded');
     }
 
@@ -235,6 +265,7 @@ class RWKVBackend implements RWKV {
     return _modelId;
   }
 
+  @override
   Future<String> dumpLog() async {
     final log = _rwkv.rwkvmobile_dump_log().toDartString();
     return log;
@@ -245,13 +276,6 @@ class RWKVBackend implements RWKV {
     final history = param.messages!.map((e) => e.content).toList();
 
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
-
-    ffi.Pointer<ffi.Pointer<ffi.Char>> inputsPtr = calloc
-        .allocate<ffi.Pointer<ffi.Char>>(1000);
-    for (var i = 0; i < history.length; i++) {
-      inputsPtr[i] = history[i].toNativeChar();
-    }
-    final numInputs = history.length;
 
     await _checkGenerationState();
 
@@ -287,18 +311,33 @@ class RWKVBackend implements RWKV {
         break;
     }
 
-    final retVal = _rwkv.rwkvmobile_runtime_eval_chat_with_history_async(
-      _handle,
-      _modelId,
-      inputsPtr,
-      numInputs,
-      decodeParam.maxTokens,
-      ffi.nullptr,
-      reasoning ? 1 : 0,
-      force ? 1 : 0,
-      generationParam.addGenerationPrompt ? 1 : 0,
-    );
-    _tryThrowErrorRetVal(retVal);
+    final arena = Arena();
+    try {
+      final numInputs = history.length;
+      final inputsPtr = arena.allocate<ffi.Pointer<ffi.Char>>(
+        numInputs == 0 ? 1 : numInputs,
+      );
+      for (var i = 0; i < history.length; i++) {
+        inputsPtr[i] = history[i]
+            .toNativeUtf8(allocator: arena)
+            .cast<ffi.Char>();
+      }
+
+      final retVal = _rwkv.rwkvmobile_runtime_eval_chat_with_history_async(
+        _handle,
+        _modelId,
+        inputsPtr,
+        numInputs,
+        decodeParam.maxTokens,
+        ffi.nullptr,
+        reasoning ? 1 : 0,
+        force ? 1 : 0,
+        generationParam.addGenerationPrompt ? 1 : 0,
+      );
+      _tryThrowErrorRetVal(retVal);
+    } finally {
+      arena.releaseAll();
+    }
 
     final isResume = history.length % 2 == 0;
 
@@ -324,7 +363,7 @@ class RWKVBackend implements RWKV {
     final prompt = param.prompt;
     logd(
       'generate start, '
-      'model_id=${_modelId}, '
+      'model_id=$_modelId, '
       'prompt_len=${prompt.length}, '
       'max_tokens=${decodeParam.maxTokens}, '
       'stop_token=${generationParam.completionStopToken}',
@@ -333,16 +372,21 @@ class RWKVBackend implements RWKV {
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
     await _checkGenerationState();
 
-    final retVal = _rwkv.rwkvmobile_runtime_gen_completion_async(
-      _handle,
-      _modelId,
-      prompt.toNativeChar(),
-      param.maxTokens ?? decodeParam.maxTokens,
-      generationParam.completionStopToken,
-      ffi.nullptr,
-      1,
-    );
-    _tryThrowErrorRetVal(retVal);
+    final arena = Arena();
+    try {
+      final retVal = _rwkv.rwkvmobile_runtime_gen_completion_async(
+        _handle,
+        _modelId,
+        prompt.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+        param.maxTokens ?? decodeParam.maxTokens,
+        generationParam.completionStopToken,
+        ffi.nullptr,
+        1,
+      );
+      _tryThrowErrorRetVal(retVal);
+    } finally {
+      arena.releaseAll();
+    }
 
     if (generationParam.returnWholeGeneratedResult) {
       _generationPosition = prompt.length;
@@ -358,7 +402,7 @@ class RWKVBackend implements RWKV {
   @override
   Future setDecodeParam(DecodeParam param) async {
     logd('set decode param: $param');
-    this.decodeParam = param;
+    decodeParam = param;
     _rwkv.rwkvmobile_runtime_set_sampler_params(
       _handle,
       _modelId,
@@ -376,68 +420,75 @@ class RWKVBackend implements RWKV {
     logd('set generation config: $param');
 
     int retVal = 0;
-    if (param.prompt != generationParam.prompt) {
-      // ensure prompt ends with \n, this is a workaround for rwkv-mobile
-      final p = param.prompt.endsWith('\n')
-          ? param.prompt
-          : '${param.prompt}\n';
-      retVal = _rwkv.rwkvmobile_runtime_set_prompt(
-        _handle,
-        _modelId,
-        p.toNativeChar(),
-      );
-      _tryThrowErrorRetVal(retVal);
-    }
-
-    if (param.eosToken != generationParam.eosToken) {
-      retVal = _rwkv.rwkvmobile_runtime_set_eos_token(
-        _handle,
-        _modelId,
-        param.eosToken!.toNativeChar(),
-      );
-      _tryThrowErrorRetVal(retVal);
-    }
-    if (param.bosToken != generationParam.bosToken) {
-      retVal = _rwkv.rwkvmobile_runtime_set_bos_token(
-        _handle,
-        _modelId,
-        param.bosToken!.toNativeChar(),
-      );
-      _tryThrowErrorRetVal(retVal);
-    }
-
-    if (param.tokenBanned != generationParam.tokenBanned) {
-      final ptr = calloc.allocate<ffi.Int>(param.tokenBanned.length);
-      for (var i = 0; i < param.tokenBanned.length; i++) {
-        ptr[i] = param.tokenBanned[i];
+    final arena = Arena();
+    try {
+      if (param.prompt != generationParam.prompt) {
+        // ensure prompt ends with \n, this is a workaround for rwkv-mobile
+        final p = param.prompt.endsWith('\n')
+            ? param.prompt
+            : '${param.prompt}\n';
+        retVal = _rwkv.rwkvmobile_runtime_set_prompt(
+          _handle,
+          _modelId,
+          p.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+        );
+        _tryThrowErrorRetVal(retVal);
       }
-      retVal = _rwkv.rwkvmobile_runtime_set_token_banned(
-        _handle,
-        _modelId,
-        ptr,
-        param.tokenBanned.length,
-      );
-      _tryThrowErrorRetVal(retVal);
-    }
 
-    if (param.thinkingToken != generationParam.thinkingToken) {
-      retVal = _rwkv.rwkvmobile_runtime_set_thinking_token(
-        _handle,
-        _modelId,
-        param.thinkingToken.toNativeChar(),
-      );
-      _tryThrowErrorRetVal(retVal);
-    }
+      if (param.eosToken != generationParam.eosToken) {
+        retVal = _rwkv.rwkvmobile_runtime_set_eos_token(
+          _handle,
+          _modelId,
+          param.eosToken!.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+        );
+        _tryThrowErrorRetVal(retVal);
+      }
+      if (param.bosToken != generationParam.bosToken) {
+        retVal = _rwkv.rwkvmobile_runtime_set_bos_token(
+          _handle,
+          _modelId,
+          param.bosToken!.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+        );
+        _tryThrowErrorRetVal(retVal);
+      }
 
-    if (param.spaceAfterRole != generationParam.spaceAfterRole) {
-      retVal = _rwkv.rwkvmobile_runtime_set_space_after_roles(
-        _handle,
-        _modelId,
-        param.spaceAfterRole ? 1 : 0,
-      );
-      _tryThrowErrorRetVal(retVal);
+      if (param.tokenBanned != generationParam.tokenBanned) {
+        final ptr = arena.allocate<ffi.Int>(
+          param.tokenBanned.isEmpty ? 1 : param.tokenBanned.length,
+        );
+        for (var i = 0; i < param.tokenBanned.length; i++) {
+          ptr[i] = param.tokenBanned[i];
+        }
+        retVal = _rwkv.rwkvmobile_runtime_set_token_banned(
+          _handle,
+          _modelId,
+          ptr,
+          param.tokenBanned.length,
+        );
+        _tryThrowErrorRetVal(retVal);
+      }
+
+      if (param.thinkingToken != generationParam.thinkingToken) {
+        retVal = _rwkv.rwkvmobile_runtime_set_thinking_token(
+          _handle,
+          _modelId,
+          param.thinkingToken.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+        );
+        _tryThrowErrorRetVal(retVal);
+      }
+
+      if (param.spaceAfterRole != generationParam.spaceAfterRole) {
+        retVal = _rwkv.rwkvmobile_runtime_set_space_after_roles(
+          _handle,
+          _modelId,
+          param.spaceAfterRole ? 1 : 0,
+        );
+        _tryThrowErrorRetVal(retVal);
+      }
+    } finally {
+      arena.releaseAll();
     }
-    this.generationParam = param;
+    generationParam = param;
   }
 
   @override
@@ -485,30 +536,34 @@ class RWKVBackend implements RWKV {
 
   Stream _pollingGenerationResult({
     bool resume = false,
-    GenerationType type = GenerationType.TEXT,
-  }) {
+    GenerationType type = GenerationType.text,
+  }) async* {
     final generationId = _lastGenerationAt;
     if (!resume) {
       _generationPosition = 0;
       _generatedTTSLen = 0;
     }
-    return Stream.periodic(const Duration(milliseconds: 20))
-        .map((e) {
-          if (generationId != _lastGenerationAt) {
-            throw Exception('stopped due to generationId changed');
-          }
-          _updateTextGenerationState();
-          switch (type) {
-            case GenerationType.TEXT:
-              return _getGenerationTextBuffer();
-            case GenerationType.TTS:
-              return _getGenerateAudioBuffer();
-            default:
-              throw UnimplementedError();
-          }
-        })
-        .takeWhile((_) => generationState.isGenerating)
-        .where((e) => type == GenerationType.TEXT ? e.text != '' : e != null);
+    while (true) {
+      await Future.delayed(const Duration(milliseconds: 40));
+      if (generationId != _lastGenerationAt) {
+        throw Exception('stopped due to generationId changed');
+      }
+      _updateTextGenerationState();
+      final event = switch (type) {
+        GenerationType.text => _getGenerationTextBuffer(),
+        GenerationType.tts => _getGenerateAudioBuffer(),
+        GenerationType.image => throw UnimplementedError(),
+      };
+      final hasData = type == GenerationType.text
+          ? event.text != ''
+          : event != null;
+      if (hasData) {
+        yield event;
+      }
+      if (!generationState.isGenerating) {
+        break;
+      }
+    }
   }
 
   GenerationResponse _getGenerationTextBuffer() {
@@ -567,7 +622,7 @@ class RWKVBackend implements RWKV {
   }
 
   void _tryThrowErrorRetVal(int retVal) {
-    if (retVal == ErrorFlag.SUCCESS.code) {
+    if (retVal == ErrorFlag.success.code) {
       return;
     }
     final errors = ErrorFlag.fromRetVal(retVal);
@@ -614,12 +669,17 @@ class RWKVBackend implements RWKV {
 
   @override
   Future loadInitialState(String path) async {
-    final retVal = _rwkv.rwkvmobile_runtime_load_initial_state(
-      _handle,
-      _modelId,
-      path.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
+    final arena = Arena();
+    try {
+      final retVal = _rwkv.rwkvmobile_runtime_load_initial_state(
+        _handle,
+        _modelId,
+        path.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+      );
+      _tryThrowErrorRetVal(retVal);
+    } finally {
+      arena.releaseAll();
+    }
   }
 
   @override
@@ -648,11 +708,12 @@ class RWKVBackend implements RWKV {
 
   @override
   Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) async {
+    final arena = Arena();
     final r = _rwkv.rwkvmobile_runtime_run_evaluation(
       _handle,
       _modelId,
-      param.source.toNativeChar(),
-      param.target.toNativeChar(),
+      param.source.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+      param.target.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
     );
     final List<double> logits = r.logits_vals.asTypedList(r.count).toList();
     final List<bool> corrects = r.corrects
@@ -662,6 +723,7 @@ class RWKVBackend implements RWKV {
         .map((e) => e != 0)
         .toList();
     _rwkv.rwkvmobile_runtime_free_evaluation_results(r);
+    arena.releaseAll();
     return RunEvaluationResult(logits: logits, corrects: corrects);
   }
 
@@ -673,24 +735,36 @@ class RWKVBackend implements RWKV {
 
   @override
   Future setImageId(String id) async {
-    final retVal = _rwkv.rwkvmobile_runtime_set_image_unique_identifier(
-      _handle,
-      id.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
+    final arena = Arena();
+    try {
+      final retVal = _rwkv.rwkvmobile_runtime_set_image_unique_identifier(
+        _handle,
+        id.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+      );
+      _tryThrowErrorRetVal(retVal);
+    } finally {
+      arena.releaseAll();
+    }
   }
 
   @override
   Stream<List<double>> textToSpeech(TextToSpeechParam param) {
-    final retVal = _rwkv.rwkvmobile_runtime_run_spark_tts_streaming_async(
-      _handle,
-      _modelId,
-      param.text.toNativeChar(),
-      (param.inputAudioText ?? "").toNativeChar(),
-      param.inputAudioPath.toNativeChar(),
-      param.outputAudioPath.toNativeChar(),
-    );
-    _tryThrowErrorRetVal(retVal);
+    final arena = Arena();
+    try {
+      final retVal = _rwkv.rwkvmobile_runtime_run_spark_tts_streaming_async(
+        _handle,
+        _modelId,
+        param.text.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+        (param.inputAudioText ?? "")
+            .toNativeUtf8(allocator: arena)
+            .cast<ffi.Char>(),
+        param.inputAudioPath.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+        param.outputAudioPath.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+      );
+      _tryThrowErrorRetVal(retVal);
+    } finally {
+      arena.releaseAll();
+    }
     logd(
       'tts streaming started, '
       'text:${param.text}, '
@@ -698,6 +772,6 @@ class RWKVBackend implements RWKV {
       'audioPath:${param.inputAudioPath}'
       'output:${param.outputAudioPath}',
     );
-    return _pollingGenerationResult(type: GenerationType.TTS).cast();
+    return _pollingGenerationResult(type: GenerationType.tts).cast();
   }
 }

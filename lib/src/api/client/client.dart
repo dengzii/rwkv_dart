@@ -38,8 +38,6 @@ class ModelService {
 
   String get url => _dio.options.baseUrl;
 
-  static Map<String, ModelService> _cache = {};
-
   ModelService._({required this.id, required String url, String accessKey = ''})
     : _accessKey = accessKey {
     _dio.options.baseUrl = url;
@@ -53,24 +51,18 @@ class ModelService {
     String accessKey = '',
     String id = '',
   }) async {
-    final uid = '$url:$id:$accessKey';
+    ModelService service = ModelService._(
+      id: id,
+      url: url,
+      accessKey: accessKey,
+    );
 
-    ModelService service;
-    if (_cache.containsKey(uid)) {
-      service = _cache[uid]!;
-    } else {
-      service = ModelService._(id: id, url: url, accessKey: accessKey);
-    }
     try {
       await service.refresh();
-      if (!_cache.containsKey(uid)) {
-        logd('model service created: $url, ${service.models.length} model(s)');
-      }
+      logd('model service created: $url, ${service.models.length} model(s)');
     } catch (_) {
       logw('model service is not available: $url');
     }
-    _cache[uid] = service;
-
     return service;
   }
 

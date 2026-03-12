@@ -30,7 +30,7 @@ class IsolateMessage {
   factory IsolateMessage.fromFunc(Function func, [dynamic param]) {
     _incrementId++;
     return IsolateMessage(
-      id: '${_incrementId}',
+      id: '$_incrementId',
       method: func.toString(),
       param: param,
     );
@@ -64,6 +64,7 @@ class RWKVIsolateProxy with _ProxyCombinedMixin {
   late final ReceivePort receivePort;
   late final Isolate isolate;
 
+  @override
   RWKV? get callee => null;
 
   @override
@@ -88,6 +89,7 @@ class RWKVIsolateProxy with _ProxyCombinedMixin {
     logd('rwkv isolate proxy released');
   }
 
+  @override
   dynamic _call(Function method, [dynamic param]) {
     final isStream = method.toString().contains('=> Stream');
     final isFuture = method.toString().contains('=> Future');
@@ -127,6 +129,7 @@ class _IsolatedRWKV with _ProxyCombinedMixin {
   late final SendPort sendPort;
   late final ReceivePort receivePort = ReceivePort('rwkv_isolate_receive_port');
 
+  @override
   RWKV? get callee => runtime;
 
   @override
@@ -223,7 +226,7 @@ mixin _ProxyCombinedMixin implements RWKV {
     throw UnimplementedError("override me");
   }
 
-  _call(Function method, [dynamic param]) {
+  dynamic _call(Function method, [dynamic param]) {
     throw UnimplementedError("override me");
   }
 
@@ -249,6 +252,8 @@ mixin _ProxyCombinedMixin implements RWKV {
     stopGenerate,
     getSeed,
     setSeed,
+    setImageId,
+    runEvaluation
   };
 
   @override

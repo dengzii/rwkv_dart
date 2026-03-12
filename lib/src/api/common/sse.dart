@@ -35,9 +35,9 @@ class SseEvent {
 
   String encodeString() {
     if (event == '') {
-      return 'data: ${data}';
+      return 'data: $data';
     }
-    return 'event: $event';
+    return 'event: $event\ndata: $data';
   }
 }
 

@@ -20,7 +20,7 @@ class OpenAiApiClient implements RWKV {
 
   GenerationConfig _config = GenerationConfig.initial();
   DecodeParam _decodeParam = DecodeParam.initial();
-  GenerationState _generationState = GenerationState.initial();
+  final GenerationState _generationState = GenerationState.initial();
 
   final _controllerState = StreamController<GenerationState>.broadcast();
 
@@ -37,8 +37,9 @@ class OpenAiApiClient implements RWKV {
 
   OpenAiApiClient(this.url, {this.apiKey = ''}) {
     _dio.options.baseUrl = url;
-    if (apiKey.isNotEmpty)
-      _dio.options.headers['Authorization'] = 'Bearer ${apiKey}';
+    if (apiKey.isNotEmpty) {
+      _dio.options.headers['Authorization'] = 'Bearer $apiKey';
+    }
     _dio.httpClientAdapter = adapter.createAdapter();
   }
 
@@ -62,8 +63,8 @@ class OpenAiApiClient implements RWKV {
 
     final history = param.messages!;
 
-    final reasoning = param.reasoning ?? _config.reasoningEffort.name;
-    final enable_thinking = reasoning != 'none';
+    final reasoning = param.reasoning?.name ?? _config.reasoningEffort.name;
+    final enableThinking = reasoning != 'none';
 
     final data = {
       'model': param.model!,
@@ -77,10 +78,12 @@ class OpenAiApiClient implements RWKV {
       'penalty_decay': _decodeParam.penaltyDecay,
 
       /// Non-standard parameters
-      if (enable_thinking) 'enable_thinking': enable_thinking,
+      if (enableThinking) 'enable_thinking': enableThinking,
 
-      if (enable_thinking) 'reasoning_effort': reasoning,
+      if (enableThinking) 'reasoning_effort': reasoning,
       'messages': [
+        if (param.systemPrompt != null && param.systemPrompt!.trim().isNotEmpty)
+          {'role': 'system', 'content': param.systemPrompt!.trim()},
         if (_config.prompt.isNotEmpty)
           {'role': 'system', 'content': _config.prompt},
         for (final msg in history) {'role': msg.role, 'content': msg.content},

@@ -26,6 +26,24 @@ class HttpServiceModelInstance {
   });
 }
 
+String? _mapFinishReason(StopReason stopReason) {
+  switch (stopReason) {
+    case StopReason.maxTokens:
+      return 'length';
+    case StopReason.canceled:
+      return 'cancelled';
+    case StopReason.error:
+      return 'error';
+    case StopReason.timeout:
+      return 'timeout';
+    case StopReason.eos:
+    case StopReason.unknown:
+      return 'stop';
+    case StopReason.none:
+      return null;
+  }
+}
+
 class RwkvHttpApiService {
   final Map<String, HttpServiceModelInstance> _instances = {};
   String _modelListPath = '';
@@ -33,6 +51,8 @@ class RwkvHttpApiService {
   List<ModelBean> _models = [];
 
   HttpServer? _server;
+
+  bool isRunning() => _server != null;
 
   Future shutdown() async {
     await _server?.close(force: true);
@@ -59,13 +79,15 @@ class RwkvHttpApiService {
     int port = 8000,
     String accessKey = '',
     String modelListPath = '',
-    List<HttpServiceModelInstance> instances = const [],
+    List<HttpServiceModelInstance>? instances,
   }) async {
     _modelListPath = modelListPath;
 
-    _instances.clear();
-    for (final inst in instances) {
-      _instances[inst.info.id] = inst;
+    if (instances != null) {
+      _instances.clear();
+      for (final inst in instances) {
+        _instances[inst.info.id] = inst;
+      }
     }
     if (_modelListPath.isNotEmpty) {
       await _launchInstance();
@@ -93,7 +115,7 @@ class RwkvHttpApiService {
               return Response.notFound('Not found');
           }
         });
-    logd('run service on ${host}:${port}');
+    logd('run service on $host:$port');
     _server = await shelf_io.serve(handler, host, port);
   }
 
@@ -128,6 +150,9 @@ class RwkvHttpApiService {
           }),
         );
       }
+      if (parsed.decodeParam != null) {
+        await instance.rwkv.setDecodeParam(parsed.decodeParam!);
+      }
       if (parsed.stream) {
         return _SSE(instance: instance, parsed: parsed).handle(request);
       }
@@ -151,8 +176,8 @@ class RwkvHttpApiService {
     logd('handle non-stream ${isChat ? 'chat' : 'gen'}: ${instance.info.id}');
 
     final stream = isChat
-        ? await instance.rwkv.chat(parsed.chatParam!)
-        : await instance.rwkv.generate(parsed.genParam!);
+        ? instance.rwkv.chat(parsed.chatParam!)
+        : instance.rwkv.generate(parsed.genParam!);
 
     final content = StringBuffer();
     StopReason stopReason = StopReason.none;
@@ -189,24 +214,6 @@ class RwkvHttpApiService {
     return Response.ok(jsonEncode(bean.toJson()));
   }
 
-  String? _mapFinishReason(StopReason stopReason) {
-    switch (stopReason) {
-      case StopReason.maxTokens:
-        return 'length';
-      case StopReason.canceled:
-        return 'cancelled';
-      case StopReason.error:
-        return 'error';
-      case StopReason.timeout:
-        return 'timeout';
-      case StopReason.eos:
-      case StopReason.unknown:
-        return 'stop';
-      case StopReason.none:
-        return null;
-    }
-  }
-
   Future _launchInstance() async {
     final json = await File(_modelListPath).readAsString();
     final modelList = jsonDecode(json)['models'] as List<dynamic>;
@@ -237,7 +244,7 @@ Middleware cross({void Function(String message, bool isError)? logger}) =>
         final origin = request.requestedUri.origin;
         resp = resp.change(
           headers: {
-            'Access-Control-Allow-Origin': '$origin',
+            'Access-Control-Allow-Origin': origin,
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
             'Access-Control-Allow-Headers':
                 'Content-Type, Authorization, x-access-key, Cache-Control',
@@ -290,10 +297,11 @@ class _SSE extends SseHandler {
     final object = !isChat ? 'text_completion' : 'chat.completion.chunk';
 
     final stream = !isChat
-        ? await instance.rwkv.generate(parsed.genParam!)
-        : await instance.rwkv.chat(parsed.chatParam!);
+        ? instance.rwkv.generate(parsed.genParam!)
+        : instance.rwkv.chat(parsed.chatParam!);
 
     await for (final resp in stream) {
+      final finishReason = _mapFinishReason(resp.stopReason);
       final bean = ChunkDataBean(
         created: created,
         model: instance.info.id,
@@ -305,7 +313,7 @@ class _SSE extends SseHandler {
             index: 0,
             text: isChat ? null : resp.text,
             delta: !isChat ? null : DeltaBean(content: resp.text),
-            finishReason: null,
+            finishReason: finishReason,
             logprobs: null,
           ),
         ],

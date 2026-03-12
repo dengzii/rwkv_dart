@@ -1,4 +1,5 @@
 import 'package:rwkv_dart/rwkv_dart.dart';
+import 'package:rwkv_dart/src/api/client/open_ai.dart';
 
 import 'backend.dart'
     if (dart.library.io) 'package:rwkv_dart/src/backend.dart'
@@ -35,7 +36,7 @@ abstract class RWKV extends RWKVBase {
 
   /// Create RWKV instance run in the network, witch is compatible with OpenAI API.
   factory RWKV.network(String baseUrl, [String? apiKey]) =>
-      RWKVBackend(baseUrl, apiKey);
+      OpenAiApiClient(baseUrl, apiKey: apiKey ?? '');
 
   /// create a [AlbatrossClient] instance.
   factory RWKV.albatross(String baseUrl, [String? apiKey]) =>
@@ -100,23 +101,23 @@ enum StopReason {
 
 enum Backend {
   /// Android, Windows and Linux
-  ncnn('ncnn', fileExtensions: const ['bin']),
+  ncnn('ncnn', fileExtensions: ['bin']),
   llamacpp('llama.cpp', fileExtensions: ['gguf', 'ggml']),
 
   /// Unsupported on Android
-  webRwkv('web-rwkv', fileExtensions: const ['st', 'prefab']),
-  qnn('qnn', fileExtensions: const ['rmpack', 'bin']),
-  mnn('mnn', fileExtensions: const ['mnn']),
-  mlx('mlx', fileExtensions: const ['zip']),
-  mtp_np7('mtp_np7', fileExtensions: const ['rmpack']),
-  coreml('coreml', fileExtensions: const ['zip']);
+  webRwkv('web-rwkv', fileExtensions: ['st', 'prefab']),
+  qnn('qnn', fileExtensions: ['rmpack', 'bin']),
+  mnn('mnn', fileExtensions: ['mnn']),
+  mlx('mlx', fileExtensions: ['zip']),
+  mtpNp7('mtp_np7', fileExtensions: ['rmpack']),
+  coreml('coreml', fileExtensions: ['zip']);
 
   final String name;
   final List<String> fileExtensions;
 
   const Backend(this.name, {this.fileExtensions = const []});
 
-  static late final _name2backend = {
+  static final _name2backend = {
     for (final backend in Backend.values) backend.name: backend,
   };
 
