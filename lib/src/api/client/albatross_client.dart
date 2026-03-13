@@ -13,7 +13,7 @@ import 'http_client.dart'
 
 /// Albatross HTTP API Client
 ///
-class AlbatrossClient implements RWKV {
+class AlbatrossClient extends RWKV {
   final String baseUrl;
   final String? password;
 
@@ -639,11 +639,6 @@ class AlbatrossClient implements RWKV {
   @override
   Future<dynamic> setImageId(String id) {
     throw UnimplementedError('setImageId is not supported in AlbatrossClient');
-  }
-
-  @override
-  Future<dynamic> setLogLevel(RWKVLogLevel level) {
-    throw UnimplementedError('setLogLevel is not supported in AlbatrossClient');
   }
 
   @override

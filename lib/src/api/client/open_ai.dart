@@ -26,7 +26,7 @@ Map<String, dynamic> _serializeMessage(ChatMessage message) {
   };
 }
 
-class OpenAiApiClient implements RWKV {
+class OpenAiApiClient extends RWKV {
   final String url;
   final String apiKey;
 
@@ -284,11 +284,6 @@ class OpenAiApiClient implements RWKV {
 
   @override
   Future<dynamic> setImageId(String id) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<dynamic> setLogLevel(RWKVLogLevel level) {
     throw UnimplementedError();
   }
 

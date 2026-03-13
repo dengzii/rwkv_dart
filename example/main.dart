@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:rwkv_dart/rwkv_dart.dart';
 
 void main() async {
@@ -8,20 +10,17 @@ void main() async {
   // rwkv_model.dll directory path
   const dynamicLibraryDir = r"";
 
-  const state = r"";
-
-  final rwkv = await RWKV.create();
+  final rwkv = RWKV.create();
   await rwkv.init(InitParam(dynamicLibDir: dynamicLibraryDir));
   await rwkv.loadModel(
     LoadModelParam(modelPath: modelPath, tokenizerPath: tokenizerPath),
   );
-  await rwkv.setGenerationConfig(
-    GenerationConfig.initial().copyWith(maxTokens: 100, completionStopToken: 0),
-  );
-  // await rwkv.loadInitialState(state);
+
   var stream = rwkv
       .chat(
         ChatParam(
+          maxTokens: 2000,
+          reasoning: ReasoningEffort.xhig,
           messages: [
             ChatMessage(
               role: 'user',
@@ -34,8 +33,7 @@ void main() async {
   String resp = "";
   stream.listen(
     (e) {
-      resp += e.text;
-      print('.');
+      stdout.write(e.text);
     },
     onDone: () {
       print('done');

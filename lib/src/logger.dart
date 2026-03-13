@@ -3,6 +3,8 @@ import 'package:rwkv_dart/rwkv_dart.dart';
 
 final _logger = Logger('RWKV');
 
+Logger get logger => _logger;
+
 bool _loggerInitialized = false;
 
 final _level = {
@@ -12,6 +14,17 @@ final _level = {
   Level.WARNING: RWKVLogLevel.warning,
   Level.SEVERE: RWKVLogLevel.error,
 };
+
+void setLoggerLevel(RWKVLogLevel level) {
+  _listenToLogs();
+  Logger.root.level = {
+    RWKVLogLevel.verbose: Level.ALL,
+    RWKVLogLevel.info: Level.CONFIG,
+    RWKVLogLevel.debug: Level.INFO,
+    RWKVLogLevel.warning: Level.WARNING,
+    RWKVLogLevel.error: Level.SEVERE,
+  }[level]!;
+}
 
 typedef LogCallback = Function(RWKVLogLevel level, String log);
 

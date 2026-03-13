@@ -1,5 +1,6 @@
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/client/open_ai.dart';
+import 'package:rwkv_dart/src/logger.dart';
 
 import 'backend.dart'
     if (dart.library.io) 'package:rwkv_dart/src/backend.dart'
@@ -29,6 +30,8 @@ abstract class RWKVBase {
 }
 
 abstract class RWKV extends RWKVBase {
+  RWKV();
+
   /// Create a RWKV ffi instance.
   factory RWKV.create() => RWKVBackend();
 
@@ -45,7 +48,9 @@ abstract class RWKV extends RWKVBase {
 
   Future init([InitParam? param]);
 
-  Future setLogLevel(RWKVLogLevel level);
+  Future setLogLevel(RWKVLogLevel level) async {
+    setLoggerLevel(level);
+  }
 
   /// Load and initialize the model, return the model id.
   Future<int> loadModel(LoadModelParam param);
