@@ -143,6 +143,37 @@ class GenerationConfig {
   }
 }
 
+final class _AsyncNativeArguments {
+  final List<ffi.Pointer<ffi.Void>> _allocations = [];
+  bool _released = false;
+
+  ffi.Pointer<ffi.Char> allocUtf8(String value) {
+    final ptr = value.toNativeUtf8(allocator: malloc).cast<ffi.Char>();
+    _allocations.add(ptr.cast<ffi.Void>());
+    return ptr;
+  }
+
+  ffi.Pointer<ffi.Pointer<ffi.Char>> allocCharPointerArray(int length) {
+    final actualLength = length == 0 ? 1 : length;
+    final ptr = malloc.allocate<ffi.Pointer<ffi.Char>>(
+      ffi.sizeOf<ffi.Pointer<ffi.Char>>() * actualLength,
+    );
+    _allocations.add(ptr.cast<ffi.Void>());
+    return ptr;
+  }
+
+  void release() {
+    if (_released) {
+      return;
+    }
+    for (final ptr in _allocations.reversed) {
+      malloc.free(ptr);
+    }
+    _allocations.clear();
+    _released = true;
+  }
+}
+
 class RWKVBackend implements RWKV {
   final _utf8codec = Utf8Codec(allowMalformed: true);
 
@@ -157,6 +188,7 @@ class RWKVBackend implements RWKV {
   int _generatedTTSLen = 0;
   int _modelId = -1;
   String? _qnnLibDir;
+  _AsyncNativeArguments? _activeGenerationArgs;
 
   GenerationConfig generationParam = GenerationConfig.initial();
   DecodeParam decodeParam = DecodeParam.initial();
@@ -356,6 +388,13 @@ class RWKVBackend implements RWKV {
     final history = param.messages!.map((e) => e.content).toList();
     final generationConfig = _chatGenerationConfig(param);
     final maxTokens = param.maxTokens ?? decodeParam.maxTokens;
+    _AsyncNativeArguments? args;
+
+    final isResume = history.length % 2 == 0;
+
+    if (isResume && !generationConfig.returnWholeGeneratedResult) {
+      _generationPosition = history.last.length;
+    }
 
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
 
@@ -382,16 +421,17 @@ class RWKVBackend implements RWKV {
         break;
     }
 
-    final arena = Arena();
     try {
+      args = _beginGenerationArgs();
+
+      if (reasoning && !isResume) {
+        history.add(generationConfig.thinkingToken);
+      }
+
       final numInputs = history.length;
-      final inputsPtr = arena.allocate<ffi.Pointer<ffi.Char>>(
-        numInputs == 0 ? 1 : numInputs,
-      );
+      final inputsPtr = args.allocCharPointerArray(numInputs);
       for (var i = 0; i < history.length; i++) {
-        inputsPtr[i] = history[i]
-            .toNativeUtf8(allocator: arena)
-            .cast<ffi.Char>();
+        inputsPtr[i] = args.allocUtf8(history[i]);
       }
 
       final retVal = _rwkv.rwkvmobile_runtime_eval_chat_with_history_async(
@@ -407,16 +447,11 @@ class RWKVBackend implements RWKV {
         generationConfig.addGenerationPrompt ? 1 : 0,
       );
       _tryThrowErrorRetVal(retVal);
+
+      yield* _pollingGenerationResult(resume: isResume).cast();
     } finally {
-      arena.releaseAll();
+      _releaseGenerationArgs(args);
     }
-
-    final isResume = history.length % 2 == 0;
-
-    if (isResume && !generationConfig.returnWholeGeneratedResult) {
-      _generationPosition = history.last.length;
-    }
-    yield* _pollingGenerationResult(resume: isResume).cast();
   }
 
   @override
@@ -434,6 +469,7 @@ class RWKVBackend implements RWKV {
   Stream<GenerationResponse> generate(GenerationParam param) async* {
     final prompt = param.prompt;
     final generationConfig = _generateGenerationConfig(param);
+    _AsyncNativeArguments? args;
     logd(
       'generate start, '
       'model_id=$_modelId, '
@@ -446,26 +482,26 @@ class RWKVBackend implements RWKV {
     await _checkGenerationState();
     await _applyGenerationConfig(generationConfig);
 
-    final arena = Arena();
     try {
+      args = _beginGenerationArgs();
       final retVal = _rwkv.rwkvmobile_runtime_gen_completion_async(
         _handle,
         _modelId,
-        prompt.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+        args.allocUtf8(prompt),
         param.maxCompletionTokens ?? decodeParam.maxTokens,
         generationConfig.completionStopToken,
         ffi.nullptr,
         1,
       );
       _tryThrowErrorRetVal(retVal);
-    } finally {
-      arena.releaseAll();
-    }
 
-    if (generationConfig.returnWholeGeneratedResult) {
-      _generationPosition = prompt.length;
+      if (generationConfig.returnWholeGeneratedResult) {
+        _generationPosition = prompt.length;
+      }
+      yield* _pollingGenerationResult().cast();
+    } finally {
+      _releaseGenerationArgs(args);
     }
-    yield* _pollingGenerationResult().cast();
   }
 
   @override
@@ -575,7 +611,7 @@ class RWKVBackend implements RWKV {
   }
 
   GenerationConfig _generateGenerationConfig(GenerationParam param) {
-    return GenerationConfig.initial().copyWith(
+    return generationParam.copyWith(
       completionStopToken: param.completionStopToken,
       returnWholeGeneratedResult: param.returnWholeGeneratedResult,
       tokenBanned: param.tokenBanned,
@@ -588,7 +624,7 @@ class RWKVBackend implements RWKV {
     final prompt = (param.prompt == null || param.prompt!.trim().isEmpty
         ? ''
         : 'System: ${param.prompt!.trim()}');
-    return GenerationConfig.initial().copyWith(
+    return generationParam.copyWith(
       reasoningEffort: param.reasoning,
       completionStopToken: param.completionStopToken,
       prompt: prompt,
@@ -638,11 +674,15 @@ class RWKVBackend implements RWKV {
   Future release() async {
     _controllerGenerationState.stream.drain();
     _controllerGenerationState.close();
-    final retVal = _rwkv.rwkvmobile_runtime_release(_handle);
-    _tryThrowErrorRetVal(retVal);
-    _handle = ffi.nullptr;
-    _modelId = -1;
-    logd('rwkv runtime released!');
+    try {
+      final retVal = _rwkv.rwkvmobile_runtime_release(_handle);
+      _tryThrowErrorRetVal(retVal);
+      logd('rwkv runtime released!');
+    } finally {
+      _releaseGenerationArgs();
+      _handle = ffi.nullptr;
+      _modelId = -1;
+    }
   }
 
   Stream _pollingGenerationResult({
@@ -682,32 +722,36 @@ class RWKVBackend implements RWKV {
       _handle,
       _modelId,
     );
-    final stopReason = resp.eos_found == 1 ? StopReason.eos : StopReason.none;
-    final len = resp.length;
-    if (len == 0) {
+    try {
+      final stopReason = resp.eos_found == 1 ? StopReason.eos : StopReason.none;
+      final len = resp.length;
+      if (len == 0) {
+        return GenerationResponse(
+          text: '',
+          tokenCount: 0,
+          stopReason: stopReason,
+        );
+      }
+      final bytes = resp.content.cast<ffi.Uint8>().asTypedList(len);
+      String text = _utf8codec.decode(bytes).trimLeft();
+
+      if (!generationParam.returnWholeGeneratedResult) {
+        if (_generationPosition < text.length) {
+          final append = text.substring(_generationPosition);
+          _generationPosition = text.length;
+          text = append;
+        } else {
+          text = '';
+        }
+      }
       return GenerationResponse(
-        text: '',
-        tokenCount: 0,
+        text: text,
+        tokenCount: -1,
         stopReason: stopReason,
       );
+    } finally {
+      _rwkv.rwkvmobile_runtime_free_response_buffer(resp);
     }
-    final bytes = resp.content.cast<ffi.Uint8>().asTypedList(len);
-    String text = _utf8codec.decode(bytes).trimLeft();
-
-    if (!generationParam.returnWholeGeneratedResult) {
-      if (_generationPosition < text.length) {
-        final append = text.substring(_generationPosition);
-        _generationPosition = text.length;
-        text = append;
-      } else {
-        text = '';
-      }
-    }
-    return GenerationResponse(
-      text: text,
-      tokenCount: -1,
-      stopReason: stopReason,
-    );
   }
 
   dynamic _getGenerateAudioBuffer() {
@@ -732,6 +776,29 @@ class RWKVBackend implements RWKV {
       // throw Exception('LLM is already generating');
       await stopGenerate();
     }
+    _updateTextGenerationState();
+    if (generationState.isGenerating) {
+      throw Exception('LLM is still generating');
+    }
+    _releaseGenerationArgs();
+  }
+
+  _AsyncNativeArguments _beginGenerationArgs() {
+    _releaseGenerationArgs();
+    final args = _AsyncNativeArguments();
+    _activeGenerationArgs = args;
+    return args;
+  }
+
+  void _releaseGenerationArgs([_AsyncNativeArguments? args]) {
+    final target = args ?? _activeGenerationArgs;
+    if (target == null) {
+      return;
+    }
+    if (identical(_activeGenerationArgs, target)) {
+      _activeGenerationArgs = null;
+    }
+    target.release();
   }
 
   void _tryThrowErrorRetVal(int retVal) {
@@ -843,7 +910,11 @@ class RWKVBackend implements RWKV {
   @override
   Future<String> dumpStateInfo() async {
     final r = _rwkv.rwkvmobile_get_state_cache_info(_handle, _modelId);
-    return r.cast<Utf8>().toDartString();
+    try {
+      return r.cast<Utf8>().toDartString();
+    } finally {
+      _rwkv.rwkvmobile_free_state_cache_info(r);
+    }
   }
 
   @override
@@ -861,30 +932,31 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) {
-    final arena = Arena();
+  Stream<List<double>> textToSpeech(TextToSpeechParam param) async* {
+    _AsyncNativeArguments? args;
+    _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
+    await _checkGenerationState();
     try {
+      args = _beginGenerationArgs();
       final retVal = _rwkv.rwkvmobile_runtime_run_spark_tts_streaming_async(
         _handle,
         _modelId,
-        param.text.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
-        (param.inputAudioText ?? "")
-            .toNativeUtf8(allocator: arena)
-            .cast<ffi.Char>(),
-        param.inputAudioPath.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
-        param.outputAudioPath.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
+        args.allocUtf8(param.text),
+        args.allocUtf8(param.inputAudioText ?? ""),
+        args.allocUtf8(param.inputAudioPath),
+        args.allocUtf8(param.outputAudioPath),
       );
       _tryThrowErrorRetVal(retVal);
+      logd(
+        'tts streaming started, '
+        'text:${param.text}, '
+        'audioText:${param.inputAudioText}, '
+        'audioPath:${param.inputAudioPath}'
+        'output:${param.outputAudioPath}',
+      );
+      yield* _pollingGenerationResult(type: GenerationType.tts).cast();
     } finally {
-      arena.releaseAll();
+      _releaseGenerationArgs(args);
     }
-    logd(
-      'tts streaming started, '
-      'text:${param.text}, '
-      'audioText:${param.inputAudioText}, '
-      'audioPath:${param.inputAudioPath}'
-      'output:${param.outputAudioPath}',
-    );
-    return _pollingGenerationResult(type: GenerationType.tts).cast();
   }
 }
