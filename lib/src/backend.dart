@@ -438,7 +438,7 @@ class RWKVBackend implements RWKV {
       'generate start, '
       'model_id=$_modelId, '
       'prompt_len=${prompt.length}, '
-      'max_tokens=${param.maxCompletionTokens ?? param.maxTokens ?? decodeParam.maxTokens}, '
+      'max_tokens=${param.maxCompletionTokens ?? decodeParam.maxTokens}, '
       'stop_token=${generationConfig.completionStopToken}',
     );
 
@@ -452,7 +452,7 @@ class RWKVBackend implements RWKV {
         _handle,
         _modelId,
         prompt.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
-        param.maxCompletionTokens ?? param.maxTokens ?? decodeParam.maxTokens,
+        param.maxCompletionTokens ?? decodeParam.maxTokens,
         generationConfig.completionStopToken,
         ffi.nullptr,
         1,
@@ -576,25 +576,18 @@ class RWKVBackend implements RWKV {
 
   GenerationConfig _generateGenerationConfig(GenerationParam param) {
     return GenerationConfig.initial().copyWith(
-      reasoningEffort: param.reasoningEffort,
       completionStopToken: param.completionStopToken,
-      prompt: param.generationPrompt,
       returnWholeGeneratedResult: param.returnWholeGeneratedResult,
-      thinkingToken: param.thinkingToken,
-      addGenerationPrompt: param.addGenerationPrompt,
       tokenBanned: param.tokenBanned,
-      spaceAfterRole: param.spaceAfterRole,
       eosToken: param.eosToken,
       bosToken: param.bosToken,
     );
   }
 
   GenerationConfig _chatGenerationConfig(ChatParam param) {
-    final prompt =
-        param.generationPrompt ??
-        (param.prompt == null || param.prompt!.trim().isEmpty
-            ? null
-            : 'System: ${param.prompt!.trim()}');
+    final prompt = (param.prompt == null || param.prompt!.trim().isEmpty
+        ? ''
+        : 'System: ${param.prompt!.trim()}');
     return GenerationConfig.initial().copyWith(
       reasoningEffort: param.reasoning,
       completionStopToken: param.completionStopToken,
@@ -662,7 +655,7 @@ class RWKVBackend implements RWKV {
       _generatedTTSLen = 0;
     }
     while (true) {
-      await Future.delayed(const Duration(milliseconds: 40));
+      await Future.delayed(const Duration(milliseconds: 60));
       if (generationId != _lastGenerationAt) {
         throw Exception('stopped due to generationId changed');
       }
@@ -689,14 +682,16 @@ class RWKVBackend implements RWKV {
       _handle,
       _modelId,
     );
-    if (resp.length == 0) {
+    final stopReason = resp.eos_found == 1 ? StopReason.eos : StopReason.none;
+    final len = resp.length;
+    if (len == 0) {
       return GenerationResponse(
         text: '',
         tokenCount: 0,
-        stopReason: StopReason.none,
+        stopReason: stopReason,
       );
     }
-    final bytes = resp.content.cast<ffi.Uint8>().asTypedList(resp.length);
+    final bytes = resp.content.cast<ffi.Uint8>().asTypedList(len);
     String text = _utf8codec.decode(bytes).trimLeft();
 
     if (!generationParam.returnWholeGeneratedResult) {
@@ -711,7 +706,7 @@ class RWKVBackend implements RWKV {
     return GenerationResponse(
       text: text,
       tokenCount: -1,
-      stopReason: resp.eos_found == 1 ? StopReason.eos : StopReason.none,
+      stopReason: stopReason,
     );
   }
 

@@ -86,9 +86,6 @@ class OpenAiApiClient implements RWKV {
       'messages': [
         if (param.prompt != null && param.prompt!.trim().isNotEmpty)
           {'role': 'system', 'content': param.prompt!.trim()},
-        if (param.generationPrompt != null &&
-            param.generationPrompt!.trim().isNotEmpty)
-          {'role': 'system', 'content': param.generationPrompt!.trim()},
         for (final msg in history) {'role': msg.role, 'content': msg.content},
       ],
     };
@@ -138,22 +135,14 @@ class OpenAiApiClient implements RWKV {
       'model': param.model!,
       'stream': true,
       'seed': null,
-      'max_tokens':
-          param.maxCompletionTokens ??
-          param.maxTokens ??
-          _decodeParam.maxTokens,
+      'max_tokens': param.maxCompletionTokens ?? _decodeParam.maxTokens,
       'temperature': _decodeParam.temperature,
       'top_p': _decodeParam.topP,
       'frequency_penalty': _decodeParam.frequencyPenalty,
       'presence_penalty': _decodeParam.presencePenalty,
       'stop': param.stopSequence,
       'penalty_decay': _decodeParam.penaltyDecay,
-      'prompt': [
-        if (param.generationPrompt != null &&
-            param.generationPrompt!.trim().isNotEmpty)
-          param.generationPrompt!.trim(),
-        param.prompt,
-      ].join('\n'),
+      'prompt': param.prompt,
     };
     Response resp;
     try {

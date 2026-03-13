@@ -108,8 +108,7 @@ class ParsedRequest {
       genParam = GenerationParam(
         model: completion.model,
         prompt: completion.prompt!,
-        maxTokens: maxTokens,
-        maxCompletionTokens: completion.maxCompletionTokens,
+        maxCompletionTokens: maxTokens,
         stopSequence: stopSequence,
       );
     }

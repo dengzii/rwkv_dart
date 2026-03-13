@@ -406,40 +406,28 @@ class GenerationParam {
   final String prompt;
 
   final String? model;
-  final int? maxTokens;
   final int? maxCompletionTokens;
   final String? reasoning;
-  final ReasoningEffort? reasoningEffort;
   final List<int>? stopSequence;
   final Map<String, dynamic>? additional;
   final int? completionStopToken;
-  final String? generationPrompt;
-  final String? thinkingToken;
   final String? eosToken;
   final String? bosToken;
   final List<int>? tokenBanned;
   final bool? returnWholeGeneratedResult;
-  final bool? addGenerationPrompt;
-  final bool? spaceAfterRole;
 
   const GenerationParam({
     required this.prompt,
     this.model,
-    this.maxTokens,
     this.maxCompletionTokens,
     this.reasoning,
-    this.reasoningEffort,
     this.stopSequence,
     this.additional,
     this.completionStopToken,
-    this.generationPrompt,
-    this.thinkingToken,
     this.eosToken,
     this.bosToken,
     this.tokenBanned,
     this.returnWholeGeneratedResult,
-    this.addGenerationPrompt,
-    this.spaceAfterRole,
   });
 }
 
@@ -462,7 +450,6 @@ class ChatParam {
   final Map<String, dynamic>? additional;
   final String? prompt;
   final int? completionStopToken;
-  final String? generationPrompt;
   final String? thinkingToken;
   final String? eosToken;
   final String? bosToken;
@@ -482,7 +469,6 @@ class ChatParam {
     this.maxCompletionTokens,
     this.prompt,
     this.completionStopToken,
-    this.generationPrompt,
     this.thinkingToken,
     this.eosToken,
     this.bosToken,
@@ -511,7 +497,6 @@ class ChatParam {
     additional: additional,
     prompt: system,
     completionStopToken: null,
-    generationPrompt: null,
     thinkingToken: null,
     eosToken: null,
     bosToken: null,

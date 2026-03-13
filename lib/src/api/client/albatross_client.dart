@@ -483,11 +483,8 @@ class AlbatrossClient implements RWKV {
     if (param.prompt != null && param.prompt!.trim().isNotEmpty) {
       messages.add(MessageBean(role: 'system', content: param.prompt!));
     }
-    if (param.generationPrompt != null &&
-        param.generationPrompt!.trim().isNotEmpty) {
-      messages.add(
-        MessageBean(role: 'system', content: param.generationPrompt!.trim()),
-      );
+    if (param.prompt != null && param.prompt!.trim().isNotEmpty) {
+      messages.add(MessageBean(role: 'system', content: param.prompt!.trim()));
     }
     for (final m in param.messages ?? []) {
       messages.add(MessageBean(role: m.role, content: m.content));
@@ -529,17 +526,8 @@ class AlbatrossClient implements RWKV {
   Stream<GenerationResponse> generate(GenerationParam param) async* {
     // Use v3 API with contents format
     final request = ChatRequest(
-      contents: [
-        if (param.generationPrompt != null &&
-            param.generationPrompt!.trim().isNotEmpty)
-          '${param.generationPrompt!.trim()}\n${param.prompt}'
-        else
-          param.prompt,
-      ],
-      maxTokens:
-          param.maxCompletionTokens ??
-          param.maxTokens ??
-          _decodeParam.maxTokens,
+      contents: [param.prompt],
+      maxTokens: param.maxCompletionTokens ?? _decodeParam.maxTokens,
       temperature: _decodeParam.temperature,
       topK: _decodeParam.topK,
       topP: _decodeParam.topP,
@@ -547,9 +535,6 @@ class AlbatrossClient implements RWKV {
       alphaFrequency: _decodeParam.frequencyPenalty,
       stopTokens: param.stopSequence?.map((e) => e.hashCode).toList(),
       stream: true,
-      enableThink: param.reasoningEffort == null
-          ? null
-          : param.reasoningEffort != ReasoningEffort.none,
     );
 
     yield* chatV3Stream(request);
