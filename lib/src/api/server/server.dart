@@ -30,6 +30,8 @@ String? _mapFinishReason(StopReason stopReason) {
   switch (stopReason) {
     case StopReason.maxTokens:
       return 'length';
+    case StopReason.toolCalls:
+      return 'tool_calls';
     case StopReason.canceled:
       return 'cancelled';
     case StopReason.error:

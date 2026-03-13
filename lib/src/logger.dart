@@ -31,6 +31,7 @@ void _listenToLogs() {
 }
 
 void setLogCallback(LogCallback callback) {
+  _loggerInitialized = true;
   Logger.root.clearListeners();
   Logger.root.onRecord.listen((record) {
     callback(_level[record.level] ?? RWKVLogLevel.debug, record.message);

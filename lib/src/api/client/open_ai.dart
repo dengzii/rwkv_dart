@@ -14,6 +14,18 @@ import 'http_client.dart'
     if (dart.library.html) 'package:rwkv_dart/src/web/http_client.dart'
     as adapter;
 
+Map<String, dynamic> _serializeMessage(ChatMessage message) {
+  final hasToolCalls = message.toolCalls?.isNotEmpty ?? false;
+  return {
+    'role': message.role,
+    if (message.content.isNotEmpty || !hasToolCalls) 'content': message.content,
+    if (message.toolCallId != null && message.toolCallId!.isNotEmpty)
+      'tool_call_id': message.toolCallId,
+    if (hasToolCalls)
+      'tool_calls': message.toolCalls!.map((e) => e.toJson()).toList(),
+  };
+}
+
 class OpenAiApiClient implements RWKV {
   final String url;
   final String apiKey;
@@ -65,7 +77,8 @@ class OpenAiApiClient implements RWKV {
     final reasoning = param.reasoning?.name ?? ReasoningEffort.none.name;
     final enableThinking = reasoning != 'none';
 
-    final data = {
+    final data = <String, dynamic>{
+      ...?param.additional,
       'model': param.model!,
       'stream': true,
       'max_tokens':
@@ -83,10 +96,17 @@ class OpenAiApiClient implements RWKV {
       if (enableThinking) 'enable_thinking': enableThinking,
 
       if (enableThinking) 'reasoning_effort': reasoning,
+      if (param.tools != null && param.tools!.isNotEmpty)
+        'tools': param.tools!.map((e) => e.toJson()).toList(),
+      if (param.toolChoice != null) 'tool_choice': param.toolChoice!.toJson(),
+      if (param.parallelToolCalls != null)
+        'parallel_tool_calls': param.parallelToolCalls,
       'messages': [
         if (param.prompt != null && param.prompt!.trim().isNotEmpty)
-          {'role': 'system', 'content': param.prompt!.trim()},
-        for (final msg in history) {'role': msg.role, 'content': msg.content},
+          _serializeMessage(
+            ChatMessage(role: 'system', content: param.prompt!.trim()),
+          ),
+        for (final msg in history) _serializeMessage(msg),
       ],
     };
 
@@ -131,7 +151,8 @@ class OpenAiApiClient implements RWKV {
   @override
   Stream<GenerationResponse> generate(GenerationParam param) async* {
     final path = '/v1/completions';
-    final data = {
+    final data = <String, dynamic>{
+      ...?param.additional,
       'model': param.model!,
       'stream': true,
       'seed': null,

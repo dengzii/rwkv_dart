@@ -25,7 +25,6 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
       final content = delta['content'];
 
       if (reasoning == null && content == null) {
-        logw('bad sse event, no content or reasoning');
         return '';
       }
 
@@ -48,11 +47,20 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
       return switch (finishReason) {
         'stop' => StopReason.eos,
         'length' => StopReason.maxTokens,
+        'tool_calls' => StopReason.toolCalls,
         'cancelled' || 'canceled' => StopReason.canceled,
         'error' => StopReason.error,
         'timeout' => StopReason.timeout,
         _ => StopReason.none,
       };
+    }
+
+    List<ToolCall> resolveToolCalls(Map? delta) {
+      final raw = delta?['tool_calls'];
+      if (raw is! Iterable) {
+        return const [];
+      }
+      return raw.map((e) => ToolCall.fromJson(e)).toList();
     }
 
     GenerationResponse? parseEvent(String event, String data) {
@@ -99,11 +107,17 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
         if (batch == 1 || batch == null) {
           final choice = choices.first as Map<String, dynamic>;
           final stopReason = resolveStopReason(choice['finish_reason']);
+          final delta = choice['delta'] as Map<String, dynamic>?;
+          final toolCalls = isCompletion
+              ? const <ToolCall>[]
+              : resolveToolCalls(delta);
           final text = isCompletion
               ? (choice['text'] ?? '') as String
-              : resolveContent(choice['delta'] as Map<String, dynamic>?);
+              : resolveContent(delta);
 
-          if (text.isEmpty && stopReason == StopReason.none) {
+          if (text.isEmpty &&
+              toolCalls.isEmpty &&
+              stopReason == StopReason.none) {
             return null;
           }
 
@@ -112,25 +126,33 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
             tokenCount: -1,
             choices: choiceList,
             stopReason: stopReason,
+            toolCalls: toolCalls.isEmpty ? null : toolCalls,
           );
         }
 
         final stopReasons = List<StopReason>.filled(batch, StopReason.none);
+        final choiceToolCalls = List<List<ToolCall>?>.filled(batch, null);
         for (final choice in choices.cast<Map<String, dynamic>>()) {
           final index = choice['index'] as int;
           stopReasons[index] = resolveStopReason(choice['finish_reason']);
           if (isCompletion) {
             choiceList[index] = (choice['text'] ?? '') as String;
           } else {
-            choiceList[index] = resolveContent(
-              choice['delta'] as Map<String, dynamic>?,
-            );
+            final delta = choice['delta'] as Map<String, dynamic>?;
+            choiceList[index] = resolveContent(delta);
+            final toolCalls = resolveToolCalls(delta);
+            if (toolCalls.isNotEmpty) {
+              choiceToolCalls[index] = toolCalls;
+            }
           }
         }
 
         final hasText = choiceList.any((e) => e.isNotEmpty);
         final hasStop = stopReasons.any((e) => e != StopReason.none);
-        if (!hasText && !hasStop) {
+        final hasToolCalls = choiceToolCalls.any(
+          (e) => e != null && e.isNotEmpty,
+        );
+        if (!hasText && !hasStop && !hasToolCalls) {
           return null;
         }
 
@@ -139,6 +161,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
           tokenCount: -1,
           choices: choiceList,
           stopReasons: stopReasons,
+          choiceToolCalls: hasToolCalls ? choiceToolCalls : null,
           stopReason: stopReasons.firstWhere(
             (e) => e != StopReason.none,
             orElse: () => StopReason.none,
@@ -173,7 +196,6 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
     final currentData = <String>[];
 
     await for (final line in lines) {
-      logv(line);
 
       if (line.isEmpty) {
         GenerationResponse? pending;
@@ -191,6 +213,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
       if (line.startsWith(':')) {
         continue;
       }
+      logv(line);
 
       final index = line.indexOf(':');
       if (index != -1) {

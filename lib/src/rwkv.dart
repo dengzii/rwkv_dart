@@ -90,6 +90,7 @@ enum StopReason {
   none,
   eos,
   maxTokens,
+  toolCalls,
   // canceled by user
   canceled,
   error,
@@ -369,13 +370,14 @@ class TextToSpeechParam {
   });
 }
 
-// TODO add reasoning content
 class GenerationResponse {
   final String text;
   final int tokenCount;
   final StopReason stopReason;
   final List<String>? choices;
   final List<StopReason>? stopReasons;
+  final List<ToolCall>? toolCalls;
+  final List<List<ToolCall>?>? choiceToolCalls;
 
   GenerationResponse({
     required this.text,
@@ -383,6 +385,8 @@ class GenerationResponse {
     this.stopReason = StopReason.none,
     this.choices,
     this.stopReasons,
+    this.toolCalls,
+    this.choiceToolCalls,
   });
 
   GenerationResponse copyWith({
@@ -391,6 +395,8 @@ class GenerationResponse {
     StopReason? stopReason,
     List<String>? choices,
     List<StopReason>? stopReasons,
+    List<ToolCall>? toolCalls,
+    List<List<ToolCall>?>? choiceToolCalls,
   }) {
     return GenerationResponse(
       text: text ?? this.text,
@@ -398,6 +404,8 @@ class GenerationResponse {
       stopReason: stopReason ?? this.stopReason,
       choices: choices ?? this.choices,
       stopReasons: stopReasons ?? this.stopReasons,
+      toolCalls: toolCalls ?? this.toolCalls,
+      choiceToolCalls: choiceToolCalls ?? this.choiceToolCalls,
     );
   }
 }
@@ -434,13 +442,23 @@ class GenerationParam {
 class ChatMessage {
   final String role;
   final String content;
+  final String? toolCallId;
+  final List<ToolCall>? toolCalls;
 
-  const ChatMessage({required this.role, required this.content});
+  const ChatMessage({
+    required this.role,
+    this.content = '',
+    this.toolCallId,
+    this.toolCalls,
+  });
 }
 
 class ChatParam {
   final List<ChatMessage>? messages;
   final List<ChatMessage>? batch;
+  final List<ToolDefinition>? tools;
+  final ToolChoice? toolChoice;
+  final bool? parallelToolCalls;
 
   final String? model;
   final int? maxCompletionTokens;
@@ -461,6 +479,9 @@ class ChatParam {
   const ChatParam({
     required this.messages,
     this.batch,
+    this.tools,
+    this.toolChoice,
+    this.parallelToolCalls,
     this.model,
     this.reasoning,
     this.additional,
@@ -486,16 +507,20 @@ class ChatParam {
     int? maxCompletionTokens,
     List<int>? stopSequence,
     Map<String, dynamic>? additional,
-    String? system,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool? parallelToolCalls,
   }) => ChatParam(
     messages: messages,
+    tools: tools,
+    toolChoice: toolChoice,
+    parallelToolCalls: parallelToolCalls,
     model: model,
     maxTokens: maxTokens,
     maxCompletionTokens: maxCompletionTokens,
     reasoning: reasoning,
     stopSequence: stopSequence,
     additional: additional,
-    prompt: system,
     completionStopToken: null,
     thinkingToken: null,
     eosToken: null,
