@@ -22,9 +22,9 @@ class ChoicesBean {
   factory ChoicesBean.fromJson(dynamic data) {
     final json = data as Map<String, dynamic>;
     return ChoicesBean(
-      finishReason: json['finish_reason'] ?? null,
+      finishReason: json['finish_reason'],
       index: json['index'] ?? 0,
-      logprobs: json['logprobs'] ?? null,
+      logprobs: json['logprobs'],
       delta: json['delta'] != null ? DeltaBean.fromJson(json['delta']) : null,
       message: json['message'] != null
           ? MessageBean.fromJson(json['message'])
