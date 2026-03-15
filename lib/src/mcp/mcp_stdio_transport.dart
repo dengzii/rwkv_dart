@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:rwkv_dart/src/logger.dart';
-
+import 'mcp_logging.dart';
 import 'mcp_transport.dart';
 
 class McpStdioTransport implements McpTransport {
@@ -14,9 +13,10 @@ class McpStdioTransport implements McpTransport {
   final bool includeParentEnvironment;
   final Duration shutdownTimeout;
 
-  final _messagesController =
+  final StreamController<Map<String, dynamic>> _messagesController =
       StreamController<Map<String, dynamic>>.broadcast();
-  final _stderrController = StreamController<String>.broadcast();
+  final StreamController<String> _stderrController =
+      StreamController<String>.broadcast();
 
   Process? _process;
   StreamSubscription<String>? _stdoutSubscription;
@@ -24,9 +24,11 @@ class McpStdioTransport implements McpTransport {
   bool _started = false;
   bool _closed = false;
 
+  String get _logPrefix => '[MCP/stdio]';
+
   McpStdioTransport({
     required this.command,
-    this.args = const [],
+    this.args = const <String>[],
     this.workingDirectory,
     this.environment,
     this.includeParentEnvironment = true,
@@ -42,12 +44,17 @@ class McpStdioTransport implements McpTransport {
   @override
   Future<void> start() async {
     if (_started) {
+      mcpLogDebug('$_logPrefix start skipped: already started');
       return;
     }
     if (_closed) {
       throw StateError('transport already closed');
     }
 
+    mcpLogDebug(
+      '$_logPrefix starting process command=$command args=${args.length}'
+      '${workingDirectory == null ? '' : ' cwd=$workingDirectory'}',
+    );
     final process = await Process.start(
       command,
       args,
@@ -59,6 +66,7 @@ class McpStdioTransport implements McpTransport {
 
     _process = process;
     _started = true;
+    mcpLogDebug('$_logPrefix process started');
 
     _stdoutSubscription = process.stdout
         .transform(utf8.decoder)
@@ -78,6 +86,9 @@ class McpStdioTransport implements McpTransport {
         _messagesController.addError(
           StateError('MCP process exited unexpectedly with code $code'),
         );
+        mcpLogWarning(
+          '$_logPrefix process exited unexpectedly with code $code',
+        );
       }),
     );
   }
@@ -87,13 +98,13 @@ class McpStdioTransport implements McpTransport {
     if (trimmed.isEmpty) {
       return;
     }
+    mcpLogTrace('$_logPrefix stdout: $trimmed');
 
     try {
       final decoded = jsonDecode(trimmed);
       if (decoded is! Map) {
         throw const FormatException('MCP message must be a JSON object');
       }
-      logd('MCP stdio transport received: $trimmed');
       _messagesController.add(
         decoded.map((key, value) => MapEntry(key.toString(), value)),
       );
@@ -114,18 +125,25 @@ class McpStdioTransport implements McpTransport {
     if (_closed) {
       throw StateError('transport already closed');
     }
-    final encoded = jsonEncode(message);
-    logd('MCP stdio transport sending: $encoded');
-    process.stdin.writeln(encoded);
+
+    mcpLogTrace('$_logPrefix send: $message');
+    process.stdin.writeln(jsonEncode(message));
     await process.stdin.flush();
+  }
+
+  @override
+  void setProtocolVersion(String version) {
+    // stdio transport does not need protocol version headers
   }
 
   @override
   Future<void> close() async {
     if (_closed) {
+      mcpLogDebug('$_logPrefix close skipped: already closed');
       return;
     }
     _closed = true;
+    mcpLogDebug('$_logPrefix closing transport');
 
     final process = _process;
     _process = null;
@@ -143,11 +161,13 @@ class McpStdioTransport implements McpTransport {
       try {
         await process.exitCode.timeout(shutdownTimeout);
       } on TimeoutException {
+        mcpLogWarning('$_logPrefix process exit timed out, killing process');
         process.kill();
       }
     }
 
     await _messagesController.close();
     await _stderrController.close();
+    mcpLogDebug('$_logPrefix transport closed');
   }
 }

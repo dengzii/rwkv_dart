@@ -7,5 +7,7 @@ abstract class McpTransport {
 
   Future<void> send(Map<String, dynamic> message);
 
+  void setProtocolVersion(String version);
+
   Future<void> close();
 }

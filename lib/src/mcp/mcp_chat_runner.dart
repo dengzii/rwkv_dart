@@ -29,18 +29,26 @@ class McpToolExecution {
 
 class McpChatRunner {
   final RWKVBase llm;
-  final List<McpClient> servers;
+  final McpHub hub;
   final String model;
   final int maxToolRounds;
-  final bool namespaceTools;
 
-  const McpChatRunner({
+  McpChatRunner({
     required this.llm,
-    required this.servers,
+    required List<McpClient> servers,
     required this.model,
     this.maxToolRounds = 8,
-    this.namespaceTools = false,
+    bool namespaceTools = false,
+  }) : hub = McpHub(servers: servers, namespaceTools: namespaceTools);
+
+  McpChatRunner.withHub({
+    required this.llm,
+    required this.hub,
+    required this.model,
+    this.maxToolRounds = 8,
   });
+
+  String get _logPrefix => '[MCP/chat]';
 
   Future<McpChatResult> run({
     required List<ChatMessage> messages,
@@ -56,10 +64,17 @@ class McpChatRunner {
     void Function(McpToolExecution execution, McpToolResult result)?
     onToolResult,
   }) async {
+    mcpLogDebug(
+      '$_logPrefix run start '
+      'messages=${messages.length} maxRounds=$maxToolRounds '
+      'parallel=${parallelToolCalls == true}',
+    );
     final workingMessages = List<ChatMessage>.from(messages);
-    final toolCatalog = await _loadToolCatalog();
 
     for (var round = 1; round <= maxToolRounds; round++) {
+      mcpLogDebug('$_logPrefix round $round building tool catalog');
+      final toolCatalog = await hub.buildToolCatalog();
+      mcpLogDebug('$_logPrefix round $round tools=${toolCatalog.tools.length}');
       final turn = await _collectAssistantTurn(
         llm.chat(
           ChatParam.openAi(
@@ -78,6 +93,11 @@ class McpChatRunner {
         onTextDelta: onTextDelta,
       );
 
+      mcpLogDebug(
+        '$_logPrefix round $round assistant turn '
+        'contentChars=${turn.content.length} toolCalls=${turn.toolCalls.length}',
+      );
+
       if (turn.content.isNotEmpty || turn.toolCalls.isNotEmpty) {
         workingMessages.add(
           ChatMessage(
@@ -89,28 +109,41 @@ class McpChatRunner {
       }
 
       if (turn.toolCalls.isEmpty) {
+        mcpLogDebug(
+          '$_logPrefix run finished at round $round without tool calls',
+        );
         return McpChatResult(
           content: turn.content,
-          messages: List.unmodifiable(workingMessages),
+          messages: List<ChatMessage>.unmodifiable(workingMessages),
           rounds: round,
         );
       }
 
-      final executions = [
+      final executions = <_PreparedToolExecution>[
         for (final call in turn.toolCalls)
           _prepareToolExecution(call, toolCatalog),
       ];
 
+      final preparedCount = executions
+          .where((execution) => execution.execution != null)
+          .length;
+      mcpLogDebug(
+        '$_logPrefix round $round prepared '
+        '$preparedCount/${executions.length} tool execution(s)',
+      );
+
       final results = parallelToolCalls == true && executions.length > 1
-          ? await Future.wait(executions.map(_executeToolCall))
+          ? await _executeInParallel(executions)
           : await _executeSequentially(executions);
 
       for (var i = 0; i < executions.length; i++) {
         final execution = executions[i];
         final result = results[i];
 
-        if (execution.execution != null && result.parsed != null) {
+        if (execution.execution != null) {
           onToolCall?.call(execution.execution!);
+        }
+        if (execution.execution != null && result.parsed != null) {
           onToolResult?.call(execution.execution!, result.parsed!);
         }
 
@@ -122,16 +155,33 @@ class McpChatRunner {
           ),
         );
       }
+
+      mcpLogDebug(
+        '$_logPrefix round $round appended ${results.length} tool result message(s)',
+      );
     }
 
+    mcpLogError('$_logPrefix stopped after $maxToolRounds rounds');
     throw StateError(
       'Stopped after $maxToolRounds tool rounds to avoid an infinite loop.',
     );
   }
 
+  Future<List<_ExecutedToolCall>> _executeInParallel(
+    List<_PreparedToolExecution> executions,
+  ) async {
+    mcpLogDebug(
+      '$_logPrefix executing ${executions.length} tool call(s) in parallel',
+    );
+    return Future.wait(executions.map(_executeToolCall));
+  }
+
   Future<List<_ExecutedToolCall>> _executeSequentially(
     List<_PreparedToolExecution> executions,
   ) async {
+    mcpLogDebug(
+      '$_logPrefix executing ${executions.length} tool call(s) sequentially',
+    );
     final results = <_ExecutedToolCall>[];
     for (final execution in executions) {
       results.add(await _executeToolCall(execution));
@@ -139,44 +189,15 @@ class McpChatRunner {
     return results;
   }
 
-  Future<_ToolCatalog> _loadToolCatalog() async {
-    final references = <String, McpToolReference>{};
-    final definitions = <ToolDefinition>[];
-    final useNamespace = namespaceTools || servers.length > 1;
-
-    for (final server in servers) {
-      await server.connect();
-      final tools = await server.listTools();
-      for (final tool in tools) {
-        final exposedName = useNamespace
-            ? '${server.id}__${tool.name}'
-            : tool.name;
-        if (references.containsKey(exposedName)) {
-          throw StateError('duplicate MCP tool name: $exposedName');
-        }
-        references[exposedName] = McpToolReference(
-          serverId: server.id,
-          exposedName: exposedName,
-          tool: tool,
-        );
-        definitions.add(
-          tool.toToolDefinition(exposedName: exposedName, serverId: server.id),
-        );
-      }
-    }
-
-    return _ToolCatalog(
-      tools: List.unmodifiable(definitions),
-      references: Map.unmodifiable(references),
-    );
-  }
-
   _PreparedToolExecution _prepareToolExecution(
     ToolCall toolCall,
-    _ToolCatalog catalog,
+    McpToolCatalog catalog,
   ) {
     final functionName = toolCall.function?.name;
     if (functionName == null || functionName.isEmpty) {
+      mcpLogWarning(
+        '$_logPrefix tool call missing function name id=${toolCall.id ?? '-'}',
+      );
       return _PreparedToolExecution(
         toolCall: toolCall,
         errorMessage: _toolError(
@@ -188,6 +209,7 @@ class McpChatRunner {
 
     final reference = catalog.references[functionName];
     if (reference == null) {
+      mcpLogWarning('$_logPrefix unsupported tool requested: $functionName');
       return _PreparedToolExecution(
         toolCall: toolCall,
         errorMessage: _toolError(
@@ -199,6 +221,13 @@ class McpChatRunner {
 
     try {
       final arguments = _parseArguments(toolCall.function?.arguments ?? '');
+      mcpLogDebug(
+        '$_logPrefix prepared tool call name=$functionName '
+        'args=${arguments.length} id=${toolCall.id ?? '-'}',
+      );
+      mcpLogTrace(
+        '$_logPrefix tool arguments name=$functionName payload=$arguments',
+      );
       return _PreparedToolExecution(
         toolCall: toolCall,
         execution: McpToolExecution(
@@ -208,6 +237,9 @@ class McpChatRunner {
         ),
       );
     } catch (error) {
+      mcpLogWarning(
+        '$_logPrefix invalid tool arguments name=$functionName error=$error',
+      );
       return _PreparedToolExecution(
         toolCall: toolCall,
         errorMessage: _toolError(
@@ -222,24 +254,34 @@ class McpChatRunner {
     _PreparedToolExecution prepared,
   ) async {
     if (prepared.errorMessage != null) {
+      mcpLogWarning(
+        '$_logPrefix skipping tool execution due to preparation error',
+      );
       return _ExecutedToolCall(messageContent: prepared.errorMessage!);
     }
 
     final execution = prepared.execution!;
-    final server = servers.firstWhere(
-      (item) => item.id == execution.tool.serverId,
-    );
-
     try {
-      final result = await server.callTool(
-        execution.tool.tool.name,
+      mcpLogDebug(
+        '$_logPrefix calling tool name=${execution.tool.exposedName} '
+        'server=${execution.tool.serverId}',
+      );
+      final result = await hub.callTool(
+        execution.tool.exposedName,
         arguments: execution.arguments,
+      );
+      mcpLogDebug(
+        '$_logPrefix tool completed name=${execution.tool.exposedName} '
+        'isError=${result.isError} blocks=${result.content.length}',
       );
       return _ExecutedToolCall(
         messageContent: result.toToolMessageContent(),
         parsed: result,
       );
     } catch (error) {
+      mcpLogError(
+        '$_logPrefix tool failed name=${execution.tool.exposedName} error=$error',
+      );
       return _ExecutedToolCall(
         messageContent: _toolError(
           code: 'tool_execution_failed',
@@ -255,20 +297,33 @@ class McpChatRunner {
   }) async {
     final content = StringBuffer();
     final toolCalls = <int, ToolCall>{};
+    var chunkCount = 0;
 
     await for (final chunk in stream) {
+      chunkCount++;
       if (chunk.text.isNotEmpty) {
         content.write(chunk.text);
         onTextDelta?.call(chunk.text);
+        mcpLogTrace(
+          '$_logPrefix chunk#$chunkCount textLen=${chunk.text.length}',
+        );
       }
 
       for (final call in chunk.toolCalls ?? const <ToolCall>[]) {
         final key = call.index ?? toolCalls.length;
         toolCalls[key] = _mergeToolCall(toolCalls[key], call);
+        mcpLogTrace(
+          '$_logPrefix chunk#$chunkCount toolDelta '
+          'index=$key id=${call.id ?? '-'} name=${call.function?.name ?? '-'}',
+        );
       }
     }
 
     final sortedKeys = toolCalls.keys.toList()..sort();
+    mcpLogDebug(
+      '$_logPrefix assistant stream complete '
+      'chunks=$chunkCount contentChars=${content.length} toolCalls=${sortedKeys.length}',
+    );
     return _AssistantTurn(
       content: content.toString(),
       toolCalls: <ToolCall>[for (final key in sortedKeys) toolCalls[key]!],
@@ -313,6 +368,7 @@ class McpChatRunner {
 
   Map<String, dynamic> _parseArguments(String rawArguments) {
     if (rawArguments.trim().isEmpty) {
+      mcpLogTrace('$_logPrefix empty tool arguments, using {}');
       return const <String, dynamic>{};
     }
 
@@ -327,6 +383,7 @@ class McpChatRunner {
   }
 
   String _toolError({required String code, required String message}) {
+    mcpLogTrace('$_logPrefix tool error payload code=$code message=$message');
     return jsonEncode(<String, dynamic>{'error': code, 'message': message});
   }
 }
@@ -348,13 +405,6 @@ class _ExecutedToolCall {
   final McpToolResult? parsed;
 
   const _ExecutedToolCall({required this.messageContent, this.parsed});
-}
-
-class _ToolCatalog {
-  final List<ToolDefinition> tools;
-  final Map<String, McpToolReference> references;
-
-  const _ToolCatalog({required this.tools, required this.references});
 }
 
 class _AssistantTurn {
