@@ -155,13 +155,9 @@ class McpClient {
     mcpLogDebug('$_logPrefix initializing session');
     final result = await _request(
       'initialize',
-      params: <String, dynamic>{
+      params: {
         'protocolVersion': mcpLatestProtocolVersion,
-        'capabilities': <String, dynamic>{
-          'tools': <String, dynamic>{},
-          'resources': <String, dynamic>{},
-          'prompts': <String, dynamic>{},
-        },
+        'capabilities': {'tools': {}, 'resources': {}, 'prompts': {}},
         'clientInfo': clientInfo.toJson(),
       },
     );

@@ -46,13 +46,7 @@ class OpenAiApiClient extends RWKV {
     ),
   );
 
-  OpenAiApiClient(this.url, {this.apiKey = ''}) {
-    _dio.options.baseUrl = url;
-    if (apiKey.isNotEmpty) {
-      _dio.options.headers['Authorization'] = 'Bearer $apiKey';
-    }
-    _dio.httpClientAdapter = adapter.createAdapter();
-  }
+  OpenAiApiClient(this.url, {this.apiKey = ''});
 
   Future getModelList() async {
     try {
@@ -244,6 +238,12 @@ class OpenAiApiClient extends RWKV {
 
   @override
   Future<List<OpenaiModelBean>> init([InitParam? param]) async {
+    _dio.options.baseUrl = url;
+    if (apiKey.isNotEmpty) {
+      _dio.options.headers['Authorization'] = 'Bearer $apiKey';
+    }
+    _dio.httpClientAdapter = adapter.createAdapter();
+
     final resp = await _dio.get('/v1/models');
     if (resp.statusCode != 200) {
       throw 'request failed, HTTP ${resp.statusCode}';

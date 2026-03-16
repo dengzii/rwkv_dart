@@ -1,5 +1,7 @@
 import 'package:rwkv_dart/rwkv_dart.dart';
 
+typedef McpToolFilter = bool Function(McpToolReference tool);
+
 class McpToolCatalog {
   final List<ToolDefinition> tools;
   final Map<String, McpToolReference> references;
@@ -21,7 +23,9 @@ class McpHub {
   });
 
   bool get _shouldNamespaceTools => namespaceTools || servers.length > 1;
+
   bool get _shouldNamespacePrompts => namespacePrompts || servers.length > 1;
+
   bool get _shouldNamespaceResources =>
       namespaceResources || servers.length > 1;
 
@@ -45,7 +49,10 @@ class McpHub {
     }
   }
 
-  Future<McpToolCatalog> buildToolCatalog({bool refresh = false}) async {
+  Future<McpToolCatalog> buildToolCatalog({
+    bool refresh = false,
+    McpToolFilter? toolFilter,
+  }) async {
     mcpLogDebug(
       '$_logPrefix building tool catalog '
       '(refresh=$refresh, namespaced=$_shouldNamespaceTools)',
@@ -66,11 +73,18 @@ class McpHub {
           mcpLogError('$_logPrefix duplicate tool name detected: $exposedName');
           throw StateError('duplicate MCP tool name: $exposedName');
         }
-        references[exposedName] = McpToolReference(
+        final reference = McpToolReference(
           serverId: server.id,
           exposedName: exposedName,
           tool: tool,
         );
+        if (toolFilter != null && !toolFilter(reference)) {
+          mcpLogDebug(
+            '$_logPrefix tool filtered name=$exposedName server=${server.id}',
+          );
+          continue;
+        }
+        references[exposedName] = reference;
         definitions.add(
           tool.toToolDefinition(exposedName: exposedName, serverId: server.id),
         );
