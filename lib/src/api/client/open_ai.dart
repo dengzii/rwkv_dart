@@ -39,12 +39,13 @@ class OpenAiApiClient extends RWKV {
 
   late final _dio = Dio(
     BaseOptions(
-      baseUrl: '',
+      baseUrl: url,
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
       sendTimeout: const Duration(seconds: 30),
+      headers: {'Authorization': 'Bearer $apiKey'},
     ),
-  );
+  )..httpClientAdapter = adapter.createAdapter();
 
   OpenAiApiClient(this.url, {this.apiKey = ''});
 
@@ -90,8 +91,6 @@ class OpenAiApiClient extends RWKV {
       if (enableThinking) 'enable_thinking': enableThinking,
 
       if (enableThinking) 'reasoning_effort': reasoning,
-      if (param.tools != null && param.tools!.isNotEmpty)
-        'tools': param.tools!.map((e) => e.toJson()).toList(),
       if (param.toolChoice != null) 'tool_choice': param.toolChoice!.toJson(),
       if (param.parallelToolCalls != null)
         'parallel_tool_calls': param.parallelToolCalls,
@@ -102,9 +101,13 @@ class OpenAiApiClient extends RWKV {
           ),
         for (final msg in history) _serializeMessage(msg),
       ],
+
+      if (param.tools != null && param.tools!.isNotEmpty)
+        'tools': param.tools!.map((e) => e.toJson()).toList(),
     };
 
-    logv(data);
+    logd(path);
+    logi(data);
 
     Response resp;
     try {
@@ -238,12 +241,6 @@ class OpenAiApiClient extends RWKV {
 
   @override
   Future<List<OpenaiModelBean>> init([InitParam? param]) async {
-    _dio.options.baseUrl = url;
-    if (apiKey.isNotEmpty) {
-      _dio.options.headers['Authorization'] = 'Bearer $apiKey';
-    }
-    _dio.httpClientAdapter = adapter.createAdapter();
-
     final resp = await _dio.get('/v1/models');
     if (resp.statusCode != 200) {
       throw 'request failed, HTTP ${resp.statusCode}';

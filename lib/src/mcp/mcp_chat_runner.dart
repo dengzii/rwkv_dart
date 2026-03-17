@@ -3,29 +3,53 @@ import 'dart:convert';
 
 import 'package:rwkv_dart/rwkv_dart.dart';
 
-enum McpChatStage { assistant, toolResults, completed }
-
-class McpChatResult {
-  final String content;
-  final String delta;
+sealed class McpChatEvent {
   final List<ChatMessage> messages;
   final int rounds;
+
+  const McpChatEvent({required this.messages, required this.rounds});
+}
+
+class McpAssistantChatEvent extends McpChatEvent {
+  final String content;
+  final String delta;
   final List<ToolCall> toolCalls;
-  final List<McpToolCallResult> toolResults;
-  final McpChatStage stage;
   final bool isPartial;
   final bool isFinal;
 
-  const McpChatResult({
+  const McpAssistantChatEvent({
     required this.content,
     required this.delta,
-    required this.messages,
-    required this.rounds,
+    required super.messages,
+    required super.rounds,
     this.toolCalls = const [],
-    this.toolResults = const [],
-    this.stage = McpChatStage.assistant,
     this.isPartial = false,
     this.isFinal = false,
+  });
+}
+
+ class McpToolCallChatEvent extends McpChatEvent {
+  final ToolCall toolCall;
+  final McpToolExecution? toolExecution;
+
+  const McpToolCallChatEvent({
+    required this.toolCall,
+    required super.messages,
+    required super.rounds,
+    this.toolExecution,
+  });
+}
+
+ class McpToolResultChatEvent extends McpChatEvent {
+  final McpToolCallResult toolResult;
+
+  ToolCall get toolCall => toolResult.toolCall;
+  McpToolExecution? get toolExecution => toolResult.execution;
+
+  const McpToolResultChatEvent({
+    required this.toolResult,
+    required super.messages,
+    required super.rounds,
   });
 }
 
@@ -44,6 +68,7 @@ class McpToolExecution {
 class McpToolCallResult {
   final ToolCall toolCall;
   final McpToolExecution? execution;
+  final McpToolCallPermission? permission;
   final String messageContent;
   final McpToolResult? result;
   final bool wasExecuted;
@@ -53,6 +78,7 @@ class McpToolCallResult {
     required this.messageContent,
     required this.wasExecuted,
     this.execution,
+    this.permission,
     this.result,
   });
 }
@@ -102,7 +128,7 @@ class McpChatRunner {
     this.toolCallAuthorizer,
   });
 
-  Stream<McpChatResult> run({
+  Stream<McpChatEvent> run({
     required List<ChatMessage> messages,
     String? prompt,
     ReasoningEffort reasoning = ReasoningEffort.none,
@@ -153,13 +179,12 @@ class McpChatRunner {
           toolCalls: progress.toolCalls,
         );
         if (!progress.isComplete || progress.toolCalls.isNotEmpty) {
-          yield McpChatResult(
+          yield McpAssistantChatEvent(
             delta: progress.delta,
             content: progress.content,
             messages: _previewMessages(workingMessages, turn),
             rounds: round,
             toolCalls: List<ToolCall>.unmodifiable(progress.toolCalls),
-            stage: McpChatStage.assistant,
             isPartial: !progress.isComplete,
           );
         }
@@ -185,12 +210,11 @@ class McpChatRunner {
         mcpLogDebug(
           '$_logPrefix run finished at round $round without tool calls',
         );
-        yield McpChatResult(
+        yield McpAssistantChatEvent(
           content: turn.content,
           delta: '',
           messages: List<ChatMessage>.unmodifiable(workingMessages),
           rounds: round,
-          stage: McpChatStage.completed,
           isFinal: true,
         );
         return;
@@ -209,18 +233,26 @@ class McpChatRunner {
         '$preparedCount/${executions.length} tool execution(s)',
       );
 
+      for (final execution in executions) {
+        yield McpToolCallChatEvent(
+          toolCall: execution.toolCall,
+          toolExecution: execution.execution,
+          messages: List<ChatMessage>.unmodifiable(workingMessages),
+          rounds: round,
+        );
+        if (execution.execution != null) {
+          onToolCall?.call(execution.execution!);
+        }
+      }
+
       final results = parallelToolCalls == true && executions.length > 1
           ? await _executeInParallel(executions, effectiveToolCallAuthorizer)
           : await _executeSequentially(executions, effectiveToolCallAuthorizer);
 
-      final toolResults = <McpToolCallResult>[];
       for (var i = 0; i < executions.length; i++) {
         final execution = executions[i];
         final result = results[i];
 
-        if (execution.execution != null && result.wasExecuted) {
-          onToolCall?.call(execution.execution!);
-        }
         if (execution.execution != null && result.parsed != null) {
           onToolResult?.call(execution.execution!, result.parsed!);
         }
@@ -232,28 +264,23 @@ class McpChatRunner {
             content: result.messageContent,
           ),
         );
-        toolResults.add(
-          McpToolCallResult(
-            toolCall: execution.toolCall,
-            execution: execution.execution,
-            messageContent: result.messageContent,
-            result: result.parsed,
-            wasExecuted: result.wasExecuted,
-          ),
+        final toolResult = McpToolCallResult(
+          toolCall: execution.toolCall,
+          execution: execution.execution,
+          permission: result.permission,
+          messageContent: result.messageContent,
+          result: result.parsed,
+          wasExecuted: result.wasExecuted,
+        );
+        yield McpToolResultChatEvent(
+          toolResult: toolResult,
+          messages: List<ChatMessage>.unmodifiable(workingMessages),
+          rounds: round,
         );
       }
 
       mcpLogDebug(
         '$_logPrefix round $round appended ${results.length} tool result message(s)',
-      );
-      yield McpChatResult(
-        content: turn.content,
-        delta: '',
-        messages: List<ChatMessage>.unmodifiable(workingMessages),
-        rounds: round,
-        toolCalls: List<ToolCall>.unmodifiable(turn.toolCalls),
-        toolResults: List<McpToolCallResult>.unmodifiable(toolResults),
-        stage: McpChatStage.toolResults,
       );
     }
 
@@ -263,7 +290,7 @@ class McpChatRunner {
     );
   }
 
-  Future<McpChatResult> runToCompletion({
+  Future<McpChatEvent> runToCompletion({
     required List<ChatMessage> messages,
     String? prompt,
     ReasoningEffort reasoning = ReasoningEffort.none,
@@ -278,7 +305,7 @@ class McpChatRunner {
     void Function(McpToolExecution execution, McpToolResult result)?
     onToolResult,
   }) async {
-    McpChatResult? last;
+    McpChatEvent? last;
     await for (final event in run(
       messages: messages,
       prompt: prompt,
@@ -402,6 +429,7 @@ class McpChatRunner {
       return _ExecutedToolCall(
         messageContent: prepared.errorMessage!,
         wasExecuted: false,
+        permission: null,
       );
     }
 
@@ -417,6 +445,7 @@ class McpChatRunner {
           code: permission.code ?? 'tool_permission_denied',
           message: permission.message ?? 'MCP tool call denied by policy',
         ),
+        permission: permission,
         wasExecuted: false,
       );
     }
@@ -437,6 +466,7 @@ class McpChatRunner {
       return _ExecutedToolCall(
         messageContent: result.toToolMessageContent(),
         parsed: result,
+        permission: permission,
         wasExecuted: true,
       );
     } catch (error) {
@@ -448,6 +478,7 @@ class McpChatRunner {
           code: 'tool_execution_failed',
           message: error.toString(),
         ),
+        permission: permission,
         wasExecuted: true,
       );
     }
@@ -623,12 +654,14 @@ class _PreparedToolExecution {
 class _ExecutedToolCall {
   final String messageContent;
   final McpToolResult? parsed;
+  final McpToolCallPermission? permission;
   final bool wasExecuted;
 
   const _ExecutedToolCall({
     required this.messageContent,
     required this.wasExecuted,
     this.parsed,
+    this.permission,
   });
 }
 
