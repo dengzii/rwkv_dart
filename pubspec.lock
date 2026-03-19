@@ -93,10 +93,10 @@ packages:
     dependency: "direct main"
     description:
       name: dio_compatibility_layer
-      sha256: bb7ea1dd6fe98b8f5e3d90da408802fc3abf14d4485416e882cf1b2c8fb4b209
+      sha256: "73ffce50133cc30a51a3b1ea20acf13b2df28e1671673188a04f671102e6fba1"
       url: "https://pub.dev"
     source: hosted
-    version: "0.1.0"
+    version: "0.1.1"
   dio_web_adapter:
     dependency: transitive
     description:

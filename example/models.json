@@ -1,0 +1,43 @@
+{
+  "models": [
+    {
+      "id": "rwkv7-g1a-0.4b",
+      "name": "rwkv7-g1a-0.4b",
+      "modelSize": 0.4,
+      "url": "mollysama/rwkv-mobile-models/resolve/main/WebRWKV/rwkv7-g1a3-1.5B-disha-roleplay-ctx8192-nf4.prefab",
+      "fileSize": 1355373863,
+      "quantization": "NF4",
+      "backend": "web_rwkv",
+      "tags": [
+        "reason",
+        "gpu",
+        "batch"
+      ],
+      "groups": [
+        "chat"
+      ],
+      "updatedAt": 1766481324000,
+      "path": "rwkv7-g1a-0.4b-20250905-ctx4096-int8.prefab",
+      "tokenizer": "b_rwkv_vocab_v20230424.txt"
+    },
+    {
+      "id": "rwkv7-g1a-0.1b",
+      "name": "RWKV7-G1a 0.1B",
+      "modelSize": 0.1,
+      "url": "mollysama/rwkv-mobile-models/resolve/main/gguf/rwkv7-g1a-0.1b-20250728-ctx4096-Q8_0.gguf",
+      "fileSize": 212372928,
+      "quantization": "Q8_0",
+      "backend": "llama_cpp",
+      "tags": [
+        "reason",
+        "cpu"
+      ],
+      "groups": [
+        "chat"
+      ],
+      "updatedAt": 1753660800000,
+      "path": "rwkv7-g1a-0.1b-20250728-ctx4096-Q8_0.gguf",
+      "tokenizer": "b_rwkv_vocab_v20230424.txt"
+    }
+  ]
+}
