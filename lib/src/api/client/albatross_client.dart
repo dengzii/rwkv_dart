@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart' hide HttpClientAdapter;
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/bean/openai/messages_bean.dart';
-import 'package:rwkv_dart/src/api/common/sse_event_transformer.dart';
+import 'package:rwkv_dart/src/api/common/sse_event_transformer_v1.dart';
 import 'package:rwkv_dart/src/logger.dart';
 
 import 'http_client.dart'
@@ -110,7 +110,7 @@ class AlbatrossClient extends RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(sseEventTransformer(request.suffix.length));
+    yield* body.stream.transform(sseEventTransformerV1(request.suffix.length));
   }
 
   // ==================== Translation API ====================
@@ -191,7 +191,9 @@ class AlbatrossClient extends RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(sseEventTransformer(1));
+    yield* body.stream.transform(
+      sseEventTransformerV1(1, fixThinkStartTag: true),
+    );
   }
 
   // ==================== Chat v2 API (Continuous Batch) ====================
@@ -267,7 +269,10 @@ class AlbatrossClient extends RWKV {
 
     final body = resp.data as ResponseBody;
     yield* body.stream.transform(
-      sseEventTransformer(request.contents?.length ?? 1),
+      sseEventTransformerV1(
+        request.contents?.length ?? 1,
+        fixThinkStartTag: true,
+      ),
     );
   }
 
@@ -325,7 +330,9 @@ class AlbatrossClient extends RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(sseEventTransformer(1));
+    yield* body.stream.transform(
+      sseEventTransformerV1(1, fixThinkStartTag: true),
+    );
   }
 
   // ==================== State Chat API ====================
@@ -379,7 +386,9 @@ class AlbatrossClient extends RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(sseEventTransformer(1));
+    yield* body.stream.transform(
+      sseEventTransformerV1(1, fixThinkStartTag: true),
+    );
   }
 
   // ==================== Multi-State API ====================
@@ -435,7 +444,7 @@ class AlbatrossClient extends RWKV {
     }
 
     final body = resp.data as ResponseBody;
-    yield* body.stream.transform(sseEventTransformer(1));
+    yield* body.stream.transform(sseEventTransformerV1(1));
   }
 
   // ==================== Session Management ====================

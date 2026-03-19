@@ -10,14 +10,14 @@ sealed class McpChatEvent {
   const McpChatEvent({required this.messages, required this.rounds});
 }
 
-class McpAssistantChatEvent extends McpChatEvent {
+class McpAssistantEvent extends McpChatEvent {
   final String content;
   final String delta;
   final List<ToolCall> toolCalls;
   final bool isPartial;
   final bool isFinal;
 
-  const McpAssistantChatEvent({
+  const McpAssistantEvent({
     required this.content,
     required this.delta,
     required super.messages,
@@ -28,11 +28,11 @@ class McpAssistantChatEvent extends McpChatEvent {
   });
 }
 
- class McpToolCallChatEvent extends McpChatEvent {
+class McpToolCallEvent extends McpChatEvent {
   final ToolCall toolCall;
   final McpToolExecution? toolExecution;
 
-  const McpToolCallChatEvent({
+  const McpToolCallEvent({
     required this.toolCall,
     required super.messages,
     required super.rounds,
@@ -40,13 +40,14 @@ class McpAssistantChatEvent extends McpChatEvent {
   });
 }
 
- class McpToolResultChatEvent extends McpChatEvent {
+class McpToolResultEvent extends McpChatEvent {
   final McpToolCallResult toolResult;
 
   ToolCall get toolCall => toolResult.toolCall;
+
   McpToolExecution? get toolExecution => toolResult.execution;
 
-  const McpToolResultChatEvent({
+  const McpToolResultEvent({
     required this.toolResult,
     required super.messages,
     required super.rounds,
@@ -103,7 +104,7 @@ typedef McpToolCallAuthorizer =
     FutureOr<McpToolCallPermission> Function(McpToolExecution execution);
 
 class McpChatRunner {
-  final RWKVBase llm;
+  final LLM llm;
   final McpHub hub;
   final String model;
   final int maxToolRounds;
@@ -157,21 +158,22 @@ class McpChatRunner {
       final toolCatalog = await hub.buildToolCatalog();
       mcpLogDebug('$_logPrefix round $round tools=${toolCatalog.tools.length}');
       _AssistantTurn? turn;
-      await for (final progress in _collectAssistantTurn(
-        llm.chat(
-          ChatParam.openAi(
-            model: model,
-            reasoning: reasoning,
-            messages: workingMessages,
-            maxTokens: maxTokens,
-            maxCompletionTokens: maxCompletionTokens,
-            additional: additional,
-            prompt: prompt,
-            tools: toolCatalog.tools,
-            toolChoice: toolChoice,
-            parallelToolCalls: parallelToolCalls,
-          ),
+      final stream = llm.chat(
+        ChatParam.openAi(
+          model: model,
+          reasoning: reasoning,
+          messages: workingMessages,
+          maxTokens: maxTokens,
+          maxCompletionTokens: maxCompletionTokens,
+          additional: additional,
+          prompt: prompt,
+          tools: toolCatalog.tools,
+          toolChoice: toolChoice,
+          parallelToolCalls: parallelToolCalls,
         ),
+      );
+      await for (final progress in _collectAssistantTurn(
+        stream,
         onTextDelta: onTextDelta,
       )) {
         turn = _AssistantTurn(
@@ -179,17 +181,17 @@ class McpChatRunner {
           toolCalls: progress.toolCalls,
         );
         if (!progress.isComplete || progress.toolCalls.isNotEmpty) {
-          yield McpAssistantChatEvent(
+          yield McpAssistantEvent(
             delta: progress.delta,
             content: progress.content,
             messages: _previewMessages(workingMessages, turn),
             rounds: round,
-            toolCalls: List<ToolCall>.unmodifiable(progress.toolCalls),
+            toolCalls: List.unmodifiable(progress.toolCalls),
             isPartial: !progress.isComplete,
           );
         }
       }
-      turn ??= const _AssistantTurn(content: '', toolCalls: <ToolCall>[]);
+      turn ??= const _AssistantTurn(content: '', toolCalls: []);
 
       mcpLogDebug(
         '$_logPrefix round $round assistant turn '
@@ -210,10 +212,10 @@ class McpChatRunner {
         mcpLogDebug(
           '$_logPrefix run finished at round $round without tool calls',
         );
-        yield McpAssistantChatEvent(
+        yield McpAssistantEvent(
           content: turn.content,
           delta: '',
-          messages: List<ChatMessage>.unmodifiable(workingMessages),
+          messages: List.unmodifiable(workingMessages),
           rounds: round,
           isFinal: true,
         );
@@ -234,7 +236,7 @@ class McpChatRunner {
       );
 
       for (final execution in executions) {
-        yield McpToolCallChatEvent(
+        yield McpToolCallEvent(
           toolCall: execution.toolCall,
           toolExecution: execution.execution,
           messages: List<ChatMessage>.unmodifiable(workingMessages),
@@ -272,7 +274,7 @@ class McpChatRunner {
           result: result.parsed,
           wasExecuted: result.wasExecuted,
         );
-        yield McpToolResultChatEvent(
+        yield McpToolResultEvent(
           toolResult: toolResult,
           messages: List<ChatMessage>.unmodifiable(workingMessages),
           rounds: round,

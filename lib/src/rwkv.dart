@@ -11,6 +11,8 @@ import 'isolate.dart'
 
 enum RWKVLogLevel { verbose, info, debug, warning, error }
 
+enum OpenAiApiVersion { chatCompletions, responses }
+
 class RuntimeError {
   final int code;
   final String message;
@@ -18,7 +20,7 @@ class RuntimeError {
   RuntimeError({required this.code, required this.message});
 }
 
-abstract class RWKVBase {
+abstract class LLM {
   /// Generate text from prompt.
   /// The generated text will be streamed,
   /// stream will be closed when generation is done.
@@ -29,15 +31,18 @@ abstract class RWKVBase {
   Future stopGenerate();
 }
 
-abstract class RWKV extends RWKVBase {
+abstract class RWKV extends LLM {
   RWKV();
 
   /// Create a RWKV ffi instance.
   factory RWKV.create() => RWKVBackend();
 
   /// Create RWKV instance run in the network, witch is compatible with OpenAI API.
-  factory RWKV.network(String baseUrl, [String? apiKey]) =>
-      OpenAiApiClient(baseUrl, apiKey: apiKey ?? '');
+  factory RWKV.network(
+    String baseUrl, [
+    String? apiKey,
+    OpenAiApiVersion apiVersion = OpenAiApiVersion.chatCompletions,
+  ]) => OpenAiApiClient(baseUrl, apiKey: apiKey ?? '', apiVersion: apiVersion);
 
   /// create a [AlbatrossClient] instance.
   factory RWKV.albatross(String baseUrl, [String? apiKey]) =>

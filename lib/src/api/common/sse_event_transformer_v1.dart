@@ -5,9 +5,10 @@ import 'dart:typed_data';
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/logger.dart';
 
-StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
-  int? batch,
-) {
+StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV1(
+  int? batch, {
+  bool fixThinkStartTag = false,
+}) {
   return StreamTransformer.fromBind((stream) async* {
     final lines = stream
         .transform(StreamTransformer.fromBind(utf8.decoder.bind))
@@ -16,11 +17,11 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
     bool insertThinkEndTag = false;
     bool insertThinkStartTag = true;
     bool completed = false;
+    bool thinkStartTagFixed = !fixThinkStartTag;
 
     String resolveContent(Map? delta) {
       if (delta == null) return '';
 
-      /// DeepSeek style
       final reasoning = delta['reasoning_content'];
       final content = delta['content'];
 
@@ -39,6 +40,12 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
         result = '</think>$content';
         insertThinkEndTag = false;
       }
+
+      if (fixThinkStartTag && !thinkStartTagFixed && result.startsWith('>')) {
+        result = "<think$result";
+        logw('Fixing think start tag');
+      }
+      thinkStartTagFixed = true;
 
       return result;
     }
@@ -196,7 +203,6 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformer(
     final currentData = <String>[];
 
     await for (final line in lines) {
-
       if (line.isEmpty) {
         GenerationResponse? pending;
         await flushEvent(currentEvent, currentData, (response) {

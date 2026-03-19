@@ -22,12 +22,11 @@ class McpHub {
     this.namespaceResources = false,
   });
 
-  bool get _shouldNamespaceTools => namespaceTools || servers.length > 1;
+  bool get _shouldNamespaceTools => namespaceTools;
 
-  bool get _shouldNamespacePrompts => namespacePrompts || servers.length > 1;
+  bool get _shouldNamespacePrompts => namespacePrompts;
 
-  bool get _shouldNamespaceResources =>
-      namespaceResources || servers.length > 1;
+  bool get _shouldNamespaceResources => namespaceResources;
 
   String get _logPrefix => '[MCP/hub]';
 

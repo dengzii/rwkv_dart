@@ -19,8 +19,8 @@ void setLoggerLevel(RWKVLogLevel level) {
   _listenToLogs();
   Logger.root.level = {
     RWKVLogLevel.verbose: Level.ALL,
-    RWKVLogLevel.info: Level.CONFIG,
-    RWKVLogLevel.debug: Level.INFO,
+    RWKVLogLevel.info: Level.INFO,
+    RWKVLogLevel.debug: Level.CONFIG,
     RWKVLogLevel.warning: Level.WARNING,
     RWKVLogLevel.error: Level.SEVERE,
   }[level]!;

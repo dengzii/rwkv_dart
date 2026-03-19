@@ -239,10 +239,7 @@ class McpClient {
     );
     final result = await _request(
       'tools/call',
-      params: <String, dynamic>{
-        'name': name,
-        if (arguments != null) 'arguments': arguments,
-      },
+      params: <String, dynamic>{'name': name, 'arguments': ?arguments},
     );
     final parsed = McpToolResult.fromJson(result);
     mcpLogDebug(
@@ -402,10 +399,7 @@ class McpClient {
     );
     final result = await _request(
       'prompts/get',
-      params: <String, dynamic>{
-        'name': name,
-        if (arguments != null) 'arguments': arguments,
-      },
+      params: <String, dynamic>{'name': name, 'arguments': ?arguments},
     );
     final parsed = McpPromptResult.fromJson(result);
     mcpLogDebug(
@@ -430,7 +424,7 @@ class McpClient {
       'jsonrpc': '2.0',
       'id': requestId,
       'method': method,
-      if (params != null) 'params': params,
+      'params': ?params,
     });
 
     return completer.future.timeout(
@@ -454,7 +448,7 @@ class McpClient {
     return transport.send(<String, dynamic>{
       'jsonrpc': '2.0',
       'method': method,
-      if (params != null) 'params': params,
+      'params': ?params,
     });
   }
 
