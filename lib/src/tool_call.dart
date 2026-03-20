@@ -26,8 +26,8 @@ class ToolDefinition {
   final ToolFunction? function;
 
   const ToolDefinition.function({required this.function})
-    : type = 'function',
-      assert(function != null);
+      : type = 'function',
+        assert(function != null);
 
   Map<String, dynamic> toJson() {
     return {'type': type, if (function != null) 'function': function!.toJson()};
@@ -47,7 +47,7 @@ class ToolChoice {
   const ToolChoice.required() : this._(mode: 'required');
 
   const ToolChoice.function(String functionName)
-    : this._(functionName: functionName);
+      : this._(functionName: functionName);
 
   dynamic toJson() {
     if (mode != null) {
@@ -66,8 +66,7 @@ class ToolCallFunction {
 
   const ToolCallFunction({this.name, this.arguments = ''});
 
-  factory ToolCallFunction.fromJson(dynamic data) {
-    final json = data as Map<String, dynamic>;
+  factory ToolCallFunction.fromJson(dynamic json) {
     return ToolCallFunction(
       name: json['name'] as String?,
       arguments: json['arguments']?.toString() ?? '',
@@ -104,8 +103,7 @@ class ToolCall {
     return int.tryParse(value?.toString() ?? '');
   }
 
-  factory ToolCall.fromJson(dynamic data) {
-    final json = data as Map<String, dynamic>;
+  factory ToolCall.fromJson(dynamic json) {
     return ToolCall(
       index: _asInt(json['index']),
       id: json['id'] as String?,

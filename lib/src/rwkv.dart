@@ -31,6 +31,10 @@ abstract class LLM {
   Future stopGenerate();
 }
 
+typedef RWKVFactory = RWKV Function();
+
+RWKV createRWKVFfiWrapBackend() => RWKVBackend();
+
 abstract class RWKV extends LLM {
   RWKV();
 
@@ -49,7 +53,10 @@ abstract class RWKV extends LLM {
       AlbatrossClient(baseUrl, password: apiKey);
 
   /// Create a RWKV instance run in the isolate.
-  factory RWKV.isolated() => RWKVIsolateProxy();
+  ///
+  /// [factory] is a function that create a [RWKV] instance, MUST be top level or static function.
+  factory RWKV.isolated([RWKVFactory factory = createRWKVFfiWrapBackend]) =>
+      RWKVIsolateProxy(factory);
 
   Future init([InitParam? param]);
 

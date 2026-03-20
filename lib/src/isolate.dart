@@ -1,6 +1,5 @@
 import 'dart:isolate';
 
-import 'package:rwkv_dart/src/backend.dart';
 import 'package:rwkv_dart/src/logger.dart';
 import 'package:rwkv_dart/src/rwkv.dart';
 
@@ -23,8 +22,8 @@ class IsolateMessage {
     this.error = '',
   });
 
-  factory IsolateMessage.initialMessage(SendPort sendPort) {
-    return IsolateMessage(id: 'initial', method: 'init', param: sendPort);
+  factory IsolateMessage._initialMessage(_SpawnMessage message) {
+    return IsolateMessage(id: 'initial', method: 'init', param: message);
   }
 
   factory IsolateMessage.fromFunc(Function func, [dynamic param]) {
@@ -58,6 +57,13 @@ class IsolateMessage {
   }
 }
 
+class _SpawnMessage {
+  final SendPort sendPort;
+  final RWKVFactory factory;
+
+  _SpawnMessage({required this.sendPort, required this.factory});
+}
+
 class RWKVIsolateProxy with _ProxyCombinedMixin {
   late final SendPort sendPort;
   late final Stream<IsolateMessage> events;
@@ -67,12 +73,18 @@ class RWKVIsolateProxy with _ProxyCombinedMixin {
   @override
   RWKV? get callee => null;
 
+  final RWKVFactory _factory;
+
+  RWKVIsolateProxy(this._factory);
+
   @override
   Future init([InitParam? param]) async {
     // init isolate
     receivePort = ReceivePort('rwkv_proxy_receive_port');
     events = receivePort.cast<IsolateMessage>().asBroadcastStream();
-    isolate = await _IsolatedRWKV.spawn(receivePort.sendPort);
+    isolate = await _IsolatedRWKV.spawn(
+      _SpawnMessage(sendPort: receivePort.sendPort, factory: _factory),
+    );
     final initMessage = await events.firstWhere((e) => e.isInitialMessage);
     sendPort = initMessage.param as SendPort;
     logd('isolate proxy initialized');
@@ -125,12 +137,13 @@ class RWKVIsolateProxy with _ProxyCombinedMixin {
 
 class _IsolatedRWKV with _ProxyCombinedMixin {
   final Map<String, Function> handlers = {};
-  late final RWKVBackend runtime = RWKVBackend();
+  late final RWKV rwkv;
+
   late final SendPort sendPort;
   late final ReceivePort receivePort = ReceivePort('rwkv_isolate_receive_port');
 
   @override
-  RWKV? get callee => runtime;
+  RWKV? get callee => rwkv;
 
   @override
   dynamic _call(Function method, [dynamic param]) {
@@ -139,9 +152,9 @@ class _IsolatedRWKV with _ProxyCombinedMixin {
 
   _IsolatedRWKV._();
 
-  static Future<Isolate> spawn(SendPort sendPort) async {
+  static Future<Isolate> spawn(_SpawnMessage msg) async {
     final rwkvIsolate = _IsolatedRWKV._();
-    final initialMessage = IsolateMessage.initialMessage(sendPort);
+    final initialMessage = IsolateMessage._initialMessage(msg);
     final isolate = await Isolate.spawn<IsolateMessage>(
       rwkvIsolate._onIsolateSpawn,
       initialMessage,
@@ -157,7 +170,9 @@ class _IsolatedRWKV with _ProxyCombinedMixin {
   }
 
   Future _onIsolateSpawn(IsolateMessage init) async {
-    sendPort = init.param as SendPort;
+    final msg = init.param as _SpawnMessage;
+    rwkv = msg.factory();
+    sendPort = msg.sendPort;
     sendPort.send(init.copyWith(param: receivePort.sendPort));
     for (var func in interfaces) {
       handlers[func.toString()] = func;
@@ -191,8 +206,7 @@ class _IsolatedRWKV with _ProxyCombinedMixin {
 
     dynamic res;
     if (message.isInitialMessage) {
-      sendPort = param as SendPort;
-      sendPort.send(message.copyWith(param: receivePort.sendPort));
+      //
     } else {
       final handler = handlers[method];
       if (handler == null) {
@@ -252,7 +266,7 @@ mixin _ProxyCombinedMixin implements RWKV {
     getSeed,
     setSeed,
     setImageId,
-    runEvaluation
+    runEvaluation,
   };
 
   @override
@@ -275,8 +289,7 @@ mixin _ProxyCombinedMixin implements RWKV {
 
   @override
   Stream<GenerationResponse> chat(ChatParam parma) {
-    return callee?.chat(parma) ??
-        _call(chat, parma).cast<GenerationResponse>();
+    return callee?.chat(parma) ?? _call(chat, parma).cast<GenerationResponse>();
   }
 
   @override
