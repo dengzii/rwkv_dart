@@ -31,6 +31,16 @@ dependencies:
   rwkv_dart: ^1.1.2
 ```
 
+在 Flutter 中使用请添加原生库依赖
+
+```yaml
+dependencies:
+  rwkv_libs:
+    git:
+      url: https://github.com/dengzii/rwkv_libs.git
+      ref: dev
+```
+
 ## 注意
 
 - 本地推理需要准备动态库、模型文件和 tokenizer 文件。
