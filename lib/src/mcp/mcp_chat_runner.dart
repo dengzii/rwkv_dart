@@ -16,10 +16,12 @@ class McpAssistantEvent extends McpChatEvent {
   final List<ToolCall> toolCalls;
   final bool isPartial;
   final bool isFinal;
+  final StopReason stopReason;
 
   const McpAssistantEvent({
     required this.content,
     required this.delta,
+    required this.stopReason,
     required super.messages,
     required super.rounds,
     this.toolCalls = const [],
@@ -31,12 +33,14 @@ class McpAssistantEvent extends McpChatEvent {
 class McpToolCallEvent extends McpChatEvent {
   final ToolCall toolCall;
   final McpToolExecution? toolExecution;
+  final bool isPartial;
 
   const McpToolCallEvent({
     required this.toolCall,
     required super.messages,
     required super.rounds,
     this.toolExecution,
+    this.isPartial = false,
   });
 }
 
@@ -172,6 +176,8 @@ class McpChatRunner {
           parallelToolCalls: parallelToolCalls,
         ),
       );
+      mcpLogDebug('$_logPrefix round $round assistant response stream opened');
+      final emittedToolCallKeys = <int>{};
       await for (final progress in _collectAssistantTurn(
         stream,
         onTextDelta: onTextDelta,
@@ -180,6 +186,17 @@ class McpChatRunner {
           content: progress.content,
           toolCalls: progress.toolCalls,
         );
+        for (var i = 0; i < progress.toolCalls.length; i++) {
+          if (!emittedToolCallKeys.add(i)) {
+            continue;
+          }
+          yield McpToolCallEvent(
+            toolCall: progress.toolCalls[i],
+            messages: _previewMessages(workingMessages, turn),
+            rounds: round,
+            isPartial: true,
+          );
+        }
         if (!progress.isComplete || progress.toolCalls.isNotEmpty) {
           yield McpAssistantEvent(
             delta: progress.delta,
@@ -188,6 +205,9 @@ class McpChatRunner {
             rounds: round,
             toolCalls: List.unmodifiable(progress.toolCalls),
             isPartial: !progress.isComplete,
+            stopReason: progress.isComplete
+                ? StopReason.toolCalls
+                : StopReason.none,
           );
         }
       }
@@ -218,6 +238,7 @@ class McpChatRunner {
           messages: List.unmodifiable(workingMessages),
           rounds: round,
           isFinal: true,
+          stopReason: StopReason.unknown,
         );
         return;
       }
@@ -241,6 +262,7 @@ class McpChatRunner {
           toolExecution: execution.execution,
           messages: List<ChatMessage>.unmodifiable(workingMessages),
           rounds: round,
+          isPartial: false,
         );
         if (execution.execution != null) {
           onToolCall?.call(execution.execution!);

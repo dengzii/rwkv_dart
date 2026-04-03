@@ -44,9 +44,7 @@ void mcpLogBasic(dynamic msg) {
 }
 
 void mcpLogDebug(dynamic msg) {
-  if (_isEnabled(McpLogVerbosity.debug)) {
-    logd(msg);
-  }
+  logd(msg);
 }
 
 void mcpLogTrace(dynamic msg) {

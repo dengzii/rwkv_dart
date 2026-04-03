@@ -15,19 +15,19 @@ final _level = {
 void setLoggerLevel(RWKVLogLevel level) {
   _logger.level = {
     RWKVLogLevel.verbose: Level.ALL,
-    RWKVLogLevel.info: Level.INFO,
-    RWKVLogLevel.debug: Level.CONFIG,
+    RWKVLogLevel.info: Level.CONFIG,
+    RWKVLogLevel.debug: Level.INFO,
     RWKVLogLevel.warning: Level.WARNING,
     RWKVLogLevel.error: Level.SEVERE,
   }[level]!;
 }
 
-typedef LogCallback = Function(RWKVLogLevel level, String log);
+typedef LogCallback = Function(LogRecord record);
 
 void setLogCallback(LogCallback callback) {
   _logger.clearListeners();
   _logger.onRecord.listen((record) {
-    callback(_level[record.level] ?? RWKVLogLevel.debug, record.message);
+    callback(record);
   });
 }
 
@@ -39,14 +39,14 @@ void logv(dynamic msg) {
 }
 
 void logi(dynamic msg) {
-  if (!_logger.isLoggable(Level.INFO)) {
+  if (!_logger.isLoggable(Level.CONFIG)) {
     return;
   }
   _logger.config(msg);
 }
 
 void logd(dynamic msg) {
-  if (!_logger.isLoggable(Level.CONFIG)) {
+  if (!_logger.isLoggable(Level.INFO)) {
     return;
   }
   _logger.info(msg);

@@ -1,3 +1,4 @@
+import 'package:logging/logging.dart';
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/client/open_ai.dart';
 import 'package:rwkv_dart/src/logger.dart';
@@ -18,6 +19,10 @@ class RuntimeError {
   final String message;
 
   RuntimeError({required this.code, required this.message});
+}
+
+void setRWKVCallback(Function(LogRecord r) f) {
+  setLogCallback(f);
 }
 
 abstract class LLM {
