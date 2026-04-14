@@ -18,6 +18,10 @@ void main() async {
   );
 
   await for (final r in st) {
-    stdout.write(r.text);
+    if (r.reasoningContent.isNotEmpty) {
+      stderr.write(r.reasoningContent);
+    } else {
+      stdout.write(r.content);
+    }
   }
 }

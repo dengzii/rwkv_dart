@@ -39,7 +39,7 @@ class ModelService {
   String get url => _dio.options.baseUrl;
 
   ModelService._({required this.id, required String url, String accessKey = ''})
-    : _accessKey = accessKey {
+      : _accessKey = accessKey {
     _dio.options.baseUrl = url;
     if (accessKey.isNotEmpty) {
       _dio.options.headers['Authorization'] = 'Bearer $accessKey';
@@ -86,14 +86,10 @@ class ModelService {
       final ownedBy = data['owned_by'] ?? '';
       RWKV rwkv;
       bool albatross = false;
-      if ({'rwkv_lightning', "albatross"}.contains(ownedBy)) {
-        rwkv = AlbatrossClient(url, password: _accessKey);
-        albatross = true;
-        _serviceType = ServiceType.albatross;
-      } else {
-        rwkv = OpenAiApiClient(url, apiKey: _accessKey);
-        _serviceType = ServiceType.openai;
-      }
+
+      rwkv = OpenAiApiClient(url, apiKey: _accessKey);
+      _serviceType = ServiceType.openai;
+
       final info = ModelBean.fromJson({
         'name': data['id'],
         'id': data['id'],

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:logging/logging.dart';
@@ -184,7 +185,8 @@ class RWKVBackend implements RWKV {
 
   RWKVLogLevel logLevel = RWKVLogLevel.error;
   int _lastGenerationAt = 0;
-  int _generationPosition = 0;
+  int _generationContentPosition = 0;
+  int _generationReasoningPosition = 0;
   int _generatedTTSLen = 0;
   int _modelId = -1;
   String? _qnnLibDir;
@@ -393,7 +395,8 @@ class RWKVBackend implements RWKV {
     final isResume = history.length % 2 == 0;
 
     if (isResume && !generationConfig.returnWholeGeneratedResult) {
-      _generationPosition = history.last.length;
+      _generationContentPosition = history.last.length;
+      _generationReasoningPosition = 0;
     }
 
     _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
@@ -448,7 +451,10 @@ class RWKVBackend implements RWKV {
       );
       _tryThrowErrorRetVal(retVal);
 
-      yield* _pollingGenerationResult(resume: isResume).cast();
+      yield* _pollingGenerationResult(
+        resume: isResume,
+        isChatMode: true,
+      ).cast();
     } finally {
       _releaseGenerationArgs(args);
     }
@@ -495,9 +501,6 @@ class RWKVBackend implements RWKV {
       );
       _tryThrowErrorRetVal(retVal);
 
-      if (generationConfig.returnWholeGeneratedResult) {
-        _generationPosition = prompt.length;
-      }
       yield* _pollingGenerationResult().cast();
     } finally {
       _releaseGenerationArgs(args);
@@ -688,10 +691,12 @@ class RWKVBackend implements RWKV {
   Stream _pollingGenerationResult({
     bool resume = false,
     GenerationType type = GenerationType.text,
+    bool isChatMode = false,
   }) async* {
     final generationId = _lastGenerationAt;
     if (!resume) {
-      _generationPosition = 0;
+      _generationContentPosition = 0;
+      _generationReasoningPosition = 0;
       _generatedTTSLen = 0;
     }
     while (true) {
@@ -701,12 +706,12 @@ class RWKVBackend implements RWKV {
       }
       _updateTextGenerationState();
       final event = switch (type) {
-        GenerationType.text => _getGenerationTextBuffer(),
+        GenerationType.text => _getGenerationTextBuffer(isChatMode),
         GenerationType.tts => _getGenerateAudioBuffer(),
         GenerationType.image => throw UnimplementedError(),
       };
       final hasData = type == GenerationType.text
-          ? event.text != ''
+          ? event.content.isNotEmpty || event.reasoningContent.isNotEmpty
           : event != null;
       if (hasData) {
         yield event;
@@ -717,7 +722,7 @@ class RWKVBackend implements RWKV {
     }
   }
 
-  GenerationResponse _getGenerationTextBuffer() {
+  GenerationResponse _getGenerationTextBuffer(bool isChatMode) {
     final resp = _rwkv.rwkvmobile_runtime_get_response_buffer_content(
       _handle,
       _modelId,
@@ -727,25 +732,41 @@ class RWKVBackend implements RWKV {
       final len = resp.length;
       if (len == 0) {
         return GenerationResponse(
-          text: '',
+          content: '',
           tokenCount: 0,
           stopReason: stopReason,
         );
       }
       final bytes = resp.content.cast<ffi.Uint8>().asTypedList(len);
-      String text = _utf8codec.decode(bytes).trimLeft();
+      String text = _decodeStreamingUtf8(bytes).trimLeft();
+      final parsed = _splitThinkTaggedText(text);
 
-      if (!generationParam.returnWholeGeneratedResult) {
-        if (_generationPosition < text.length) {
-          final append = text.substring(_generationPosition);
-          _generationPosition = text.length;
-          text = append;
-        } else {
-          text = '';
-        }
+      if (generationParam.returnWholeGeneratedResult) {
+        return GenerationResponse(
+          content: parsed.content,
+          reasoningContent: parsed.reasoningContent,
+          tokenCount: -1,
+          stopReason: stopReason,
+        );
       }
+
+      var content = '';
+      if (_generationContentPosition < parsed.content.length) {
+        content = parsed.content.substring(_generationContentPosition);
+        _generationContentPosition = parsed.content.length;
+      }
+
+      var reasoningContent = '';
+      if (_generationReasoningPosition < parsed.reasoningContent.length) {
+        reasoningContent = parsed.reasoningContent.substring(
+          _generationReasoningPosition,
+        );
+        _generationReasoningPosition = parsed.reasoningContent.length;
+      }
+
       return GenerationResponse(
-        text: text,
+        content: content,
+        reasoningContent: reasoningContent,
         tokenCount: -1,
         stopReason: stopReason,
       );
@@ -769,6 +790,66 @@ class RWKVBackend implements RWKV {
     }
     _generatedTTSLen = buffer.length;
     return samples;
+  }
+
+  String _decodeStreamingUtf8(Uint8List bytes) {
+    final maxTrim = bytes.length >= 3 ? 3 : bytes.length;
+
+    for (var trim = 0; trim <= maxTrim; trim++) {
+      final end = bytes.length - trim;
+      try {
+        return utf8.decode(end == bytes.length ? bytes : bytes.sublist(0, end));
+      } on FormatException {
+        continue;
+      }
+    }
+
+    return _utf8codec.decode(bytes, allowMalformed: true);
+  }
+
+  ({String content, String reasoningContent}) _splitThinkTaggedText(
+    String text,
+  ) {
+    const thinkStartTag = '<think>';
+    const thinkEndTag = '</think>';
+
+    final content = StringBuffer();
+    final reasoning = StringBuffer();
+    var inReasoning = false;
+    var index = 0;
+
+    while (index < text.length) {
+      if (text.startsWith(thinkStartTag, index)) {
+        inReasoning = true;
+        index += thinkStartTag.length;
+        continue;
+      }
+
+      if (text.startsWith(thinkEndTag, index)) {
+        inReasoning = false;
+        index += thinkEndTag.length;
+        continue;
+      }
+
+      if (text[index] == '<') {
+        final tail = text.substring(index);
+        if (thinkStartTag.startsWith(tail) || thinkEndTag.startsWith(tail)) {
+          break;
+        }
+      }
+
+      if (inReasoning) {
+        reasoning.write(text[index]);
+      } else {
+        content.write(text[index]);
+      }
+      index++;
+    }
+
+    return (
+      content: content.toString(),
+      reasoningContent: reasoning.toString(),
+    );
   }
 
   Future _checkGenerationState() async {

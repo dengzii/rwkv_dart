@@ -184,8 +184,8 @@ class RwkvHttpApiService {
     final content = StringBuffer();
     StopReason stopReason = StopReason.none;
     await for (final resp in stream) {
-      if (resp.text.isNotEmpty) {
-        content.write(resp.text);
+      if (resp.content.isNotEmpty) {
+        content.write(resp.content);
       }
       if (resp.stopReason != StopReason.none) {
         stopReason = resp.stopReason;
@@ -313,8 +313,8 @@ class _SSE extends SseHandler {
         choices: [
           ChoicesBean(
             index: 0,
-            text: isChat ? null : resp.text,
-            delta: !isChat ? null : DeltaBean(content: resp.text),
+            text: isChat ? null : resp.content,
+            delta: !isChat ? null : DeltaBean(content: resp.content),
             finishReason: finishReason,
             logprobs: null,
           ),

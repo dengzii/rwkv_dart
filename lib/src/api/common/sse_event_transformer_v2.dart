@@ -25,10 +25,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
         .transform(StreamTransformer.fromBind(utf8.decoder.bind))
         .transform(LineSplitter());
 
-    bool insertThinkEndTag = false;
-    bool insertThinkStartTag = true;
     bool completed = false;
-    bool thinkStartTagFixed = !fixThinkStartTag;
     final responsesToolCalls = <String, _ResponsesToolCallState>{};
     var nextResponsesToolIndex = 0;
 
@@ -37,19 +34,11 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
         return '';
       }
 
-      var result = text;
-      if (insertThinkEndTag) {
-        result = '</think>$result';
-        insertThinkEndTag = false;
+      if (text.startsWith('</think>')) {
+        return text.substring('</think>'.length);
       }
 
-      if (fixThinkStartTag && !thinkStartTagFixed && result.startsWith('>')) {
-        result = "<think$result";
-        logw('Fixing think start tag');
-      }
-      thinkStartTagFixed = true;
-
-      return result;
+      return text;
     }
 
     String resolveResponsesReasoningDelta(String reasoning) {
@@ -57,20 +46,12 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
         return '';
       }
 
-      var result = reasoning;
-      if (insertThinkStartTag) {
-        insertThinkEndTag = true;
-        insertThinkStartTag = false;
-        result = '<think>$reasoning';
-      }
-
-      if (fixThinkStartTag && !thinkStartTagFixed && result.startsWith('>')) {
-        result = "<think$result";
+      if (fixThinkStartTag && reasoning.startsWith('>')) {
         logw('Fixing think start tag');
+        return reasoning.substring(1);
       }
-      thinkStartTagFixed = true;
 
-      return result;
+      return reasoning;
     }
 
     int? asInt(dynamic value) {
@@ -123,16 +104,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
       final response = map['response'] as Map<String, dynamic>?;
       final details = response?['incomplete_details'] as Map<String, dynamic>?;
       final reason = details?['reason']?.toString();
-      return switch (reason) {
-        'max_output_tokens' => StopReason.maxTokens,
-        'cancelled' || 'canceled' => StopReason.canceled,
-        'tool_calls' => StopReason.toolCalls,
-        'error' => StopReason.error,
-        'timeout' => StopReason.timeout,
-        null => StopReason.none,
-        '' => StopReason.none,
-        _ => StopReason.unknown,
-      };
+      return StopReason.resolve(reason);
     }
 
     GenerationResponse? parseEvent(String event, String data) {
@@ -145,7 +117,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
 
       if (event == 'ERROR' || data == '[ERROR]') {
         return GenerationResponse(
-          text: '',
+          content: '',
           choices: choiceList,
           tokenCount: -1,
           stopReason: StopReason.error,
@@ -157,7 +129,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
           return null;
         }
         return GenerationResponse(
-          text: '',
+          content: '',
           choices: choiceList,
           tokenCount: -1,
           stopReason: StopReason.eos,
@@ -181,7 +153,8 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
               return null;
             }
             return GenerationResponse(
-              text: text,
+              content: text,
+              reasoningContent: '',
               choices: choiceList,
               tokenCount: -1,
             );
@@ -195,7 +168,8 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
               return null;
             }
             return GenerationResponse(
-              text: text,
+              content: '',
+              reasoningContent: text,
               choices: choiceList,
               tokenCount: -1,
             );
@@ -212,7 +186,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
             }
             state.arguments = '${state.arguments}$delta';
             return GenerationResponse(
-              text: '',
+              content: '',
               choices: choiceList,
               tokenCount: -1,
               toolCalls: [toResponsesToolCall(state, argumentsDelta: delta)],
@@ -245,7 +219,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
             }
 
             return GenerationResponse(
-              text: '',
+              content: '',
               choices: choiceList,
               tokenCount: -1,
               toolCalls: [
@@ -257,14 +231,14 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
               return null;
             }
             return GenerationResponse(
-              text: '',
+              content: '',
               choices: choiceList,
               tokenCount: -1,
               stopReason: StopReason.eos,
             );
           case 'response.incomplete':
             return GenerationResponse(
-              text: '',
+              content: '',
               choices: choiceList,
               tokenCount: -1,
               stopReason: resolveResponsesIncompleteReason(map),
@@ -272,7 +246,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
           case 'response.failed':
           case 'error':
             return GenerationResponse(
-              text: '',
+              content: '',
               choices: choiceList,
               tokenCount: -1,
               stopReason: StopReason.error,
@@ -280,7 +254,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV2(
           case 'response.cancelled':
           case 'response.canceled':
             return GenerationResponse(
-              text: '',
+              content: '',
               choices: choiceList,
               tokenCount: -1,
               stopReason: StopReason.canceled,

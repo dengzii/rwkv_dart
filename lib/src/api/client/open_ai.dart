@@ -205,7 +205,7 @@ class OpenAiApiClient extends RWKV {
             'penalty_decay': _decodeParam.penaltyDecay,
 
             /// Non-standard parameters
-            if (enableThinking) 'enable_thinking': enableThinking,
+            // if (enableThinking) 'enable_thinking': enableThinking,
             if (enableThinking) 'reasoning_effort': reasoning,
             if (param.toolChoice != null)
               'tool_choice': param.toolChoice!.toJson(),
@@ -241,7 +241,7 @@ class OpenAiApiClient extends RWKV {
     } catch (e, s) {
       checkError(e);
       if (e is DioException) {
-        throw "${e.type} ${e.response?.statusCode}\n$s";
+        rethrow;
       }
       throw 'request failed';
     }
@@ -254,7 +254,7 @@ class OpenAiApiClient extends RWKV {
       yield* body.stream.transform(transformer);
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
-        yield GenerationResponse(text: '', stopReason: StopReason.canceled);
+        yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
       }
       rethrow;
@@ -334,7 +334,7 @@ class OpenAiApiClient extends RWKV {
     } catch (e) {
       checkError(e);
       if (e is DioException && e.type == DioExceptionType.cancel) {
-        yield GenerationResponse(text: '', stopReason: StopReason.canceled);
+        yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
       }
       rethrow;

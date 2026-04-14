@@ -14,52 +14,30 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV1(
         .transform(StreamTransformer.fromBind(utf8.decoder.bind))
         .transform(LineSplitter());
 
-    bool insertThinkEndTag = false;
-    bool insertThinkStartTag = true;
     bool completed = false;
-    bool thinkStartTagFixed = !fixThinkStartTag;
 
-    String resolveContent(Map? delta) {
-      if (delta == null) return '';
-
-      final reasoning = delta['reasoning_content'];
-      final content = delta['content'];
-
-      if (reasoning == null && content == null) {
-        return '';
+    ({String content, String reasoningContent}) resolveDelta(Map? delta) {
+      if (delta == null) {
+        return (content: '', reasoningContent: '');
       }
 
-      String result = reasoning ?? content;
-      if (reasoning != null && insertThinkStartTag) {
-        insertThinkEndTag = true;
-        insertThinkStartTag = false;
-        result = '<think>$reasoning';
+      var reasoning = delta['reasoning_content']?.toString() ?? '';
+      var content = delta['content']?.toString() ?? '';
+
+      if (reasoning.isEmpty && content.isEmpty) {
+        return (content: '', reasoningContent: '');
       }
 
-      if (content != null && insertThinkEndTag) {
-        result = '</think>$content';
-        insertThinkEndTag = false;
-      }
-
-      if (fixThinkStartTag && !thinkStartTagFixed && result.startsWith('>')) {
-        result = "<think$result";
+      if (fixThinkStartTag && reasoning.startsWith('>')) {
+        reasoning = reasoning.substring(1);
         logw('Fixing think start tag');
       }
-      thinkStartTagFixed = true;
 
-      return result;
-    }
+      if (content.startsWith('</think>')) {
+        content = content.substring('</think>'.length);
+      }
 
-    StopReason resolveStopReason(dynamic finishReason) {
-      return switch (finishReason) {
-        'stop' => StopReason.eos,
-        'length' => StopReason.maxTokens,
-        'tool_calls' => StopReason.toolCalls,
-        'cancelled' || 'canceled' => StopReason.canceled,
-        'error' => StopReason.error,
-        'timeout' => StopReason.timeout,
-        _ => StopReason.none,
-      };
+      return (content: content, reasoningContent: reasoning);
     }
 
     List<ToolCall> resolveToolCalls(Map? delta) {
@@ -80,7 +58,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV1(
 
       if (event == 'ERROR' || data == '[ERROR]') {
         return GenerationResponse(
-          text: '',
+          content: '',
           choices: choiceList,
           tokenCount: -1,
           stopReason: StopReason.error,
@@ -92,7 +70,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV1(
           return null;
         }
         return GenerationResponse(
-          text: '',
+          content: '',
           choices: choiceList,
           tokenCount: -1,
           stopReason: StopReason.eos,
@@ -113,23 +91,28 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV1(
 
         if (batch == 1 || batch == null) {
           final choice = choices.first as Map<String, dynamic>;
-          final stopReason = resolveStopReason(choice['finish_reason']);
+          final stopReason = StopReason.resolve(choice['finish_reason']);
           final delta = choice['delta'] as Map<String, dynamic>?;
           final toolCalls = isCompletion
               ? const <ToolCall>[]
               : resolveToolCalls(delta);
-          final text = isCompletion
-              ? (choice['text'] ?? '') as String
-              : resolveContent(delta);
+          final resolved = isCompletion
+              ? (
+                  content: (choice['text'] ?? '') as String,
+                  reasoningContent: '',
+                )
+              : resolveDelta(delta);
 
-          if (text.isEmpty &&
+          if (resolved.content.isEmpty &&
+              resolved.reasoningContent.isEmpty &&
               toolCalls.isEmpty &&
               stopReason == StopReason.none) {
             return null;
           }
 
           return GenerationResponse(
-            text: text,
+            content: resolved.content,
+            reasoningContent: resolved.reasoningContent,
             tokenCount: -1,
             choices: choiceList,
             stopReason: stopReason,
@@ -141,12 +124,12 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV1(
         final choiceToolCalls = List<List<ToolCall>?>.filled(batch, null);
         for (final choice in choices.cast<Map<String, dynamic>>()) {
           final index = choice['index'] as int;
-          stopReasons[index] = resolveStopReason(choice['finish_reason']);
+          stopReasons[index] = StopReason.resolve(choice['finish_reason']);
           if (isCompletion) {
             choiceList[index] = (choice['text'] ?? '') as String;
           } else {
             final delta = choice['delta'] as Map<String, dynamic>?;
-            choiceList[index] = resolveContent(delta);
+            choiceList[index] = resolveDelta(delta).content;
             final toolCalls = resolveToolCalls(delta);
             if (toolCalls.isNotEmpty) {
               choiceToolCalls[index] = toolCalls;
@@ -164,7 +147,7 @@ StreamTransformer<Uint8List, GenerationResponse> sseEventTransformerV1(
         }
 
         return GenerationResponse(
-          text: '',
+          content: '',
           tokenCount: -1,
           choices: choiceList,
           stopReasons: stopReasons,

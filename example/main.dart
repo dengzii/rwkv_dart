@@ -33,7 +33,11 @@ void main() async {
   String resp = "";
   stream.listen(
     (e) {
-      stdout.write(e.text);
+      if (e.reasoningContent.isNotEmpty) {
+        stderr.write(e.reasoningContent);
+      } else {
+        stdout.write(e.content);
+      }
     },
     onDone: () {
       print('done');

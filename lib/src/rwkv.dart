@@ -117,7 +117,26 @@ enum StopReason {
   canceled,
   error,
   timeout,
-  unknown,
+  unknown;
+
+  static StopReason resolve(dynamic reason) {
+    final r = switch (reason) {
+      'max_output_tokens' => StopReason.maxTokens,
+      'cancelled' || 'canceled' => StopReason.canceled,
+      'tool_calls' => StopReason.toolCalls,
+      'error' => StopReason.error,
+      'timeout' => StopReason.timeout,
+      'length' => StopReason.maxTokens,
+      'stop' => StopReason.eos,
+      null => StopReason.none,
+      '' => StopReason.none,
+      _ => StopReason.unknown,
+    };
+    if (r == StopReason.unknown && reason != null) {
+      logw('Unexpected finish reason: $reason');
+    }
+    return r;
+  }
 }
 
 enum Backend {
@@ -162,11 +181,13 @@ class InitParam {
 
   // if using qnn, this is required
   final String? qnnLibDir;
+  final Map<String, dynamic> extra;
 
   InitParam({
     this.dynamicLibDir,
     this.logLevel = RWKVLogLevel.debug,
     this.qnnLibDir,
+    this.extra = const {},
   });
 }
 
@@ -393,7 +414,8 @@ class TextToSpeechParam {
 }
 
 class GenerationResponse {
-  final String text;
+  final String content;
+  final String reasoningContent;
   final int tokenCount;
   final StopReason stopReason;
   final List<String>? choices;
@@ -402,7 +424,8 @@ class GenerationResponse {
   final List<List<ToolCall>?>? choiceToolCalls;
 
   GenerationResponse({
-    required this.text,
+    required this.content,
+    this.reasoningContent = '',
     this.tokenCount = -1,
     this.stopReason = StopReason.none,
     this.choices,
@@ -412,7 +435,8 @@ class GenerationResponse {
   });
 
   GenerationResponse copyWith({
-    String? text,
+    String? content,
+    String? reasoningContent,
     int? tokenCount,
     StopReason? stopReason,
     List<String>? choices,
@@ -421,7 +445,8 @@ class GenerationResponse {
     List<List<ToolCall>?>? choiceToolCalls,
   }) {
     return GenerationResponse(
-      text: text ?? this.text,
+      reasoningContent: reasoningContent ?? this.reasoningContent,
+      content: content ?? this.content,
       tokenCount: tokenCount ?? this.tokenCount,
       stopReason: stopReason ?? this.stopReason,
       choices: choices ?? this.choices,

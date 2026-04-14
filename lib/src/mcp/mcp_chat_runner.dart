@@ -12,7 +12,9 @@ sealed class McpChatEvent {
 
 class McpAssistantEvent extends McpChatEvent {
   final String content;
+  final String reasoningContent;
   final String delta;
+  final String reasoningDelta;
   final List<ToolCall> toolCalls;
   final bool isPartial;
   final bool isFinal;
@@ -21,6 +23,8 @@ class McpAssistantEvent extends McpChatEvent {
   const McpAssistantEvent({
     required this.content,
     required this.delta,
+    this.reasoningContent = '',
+    this.reasoningDelta = '',
     required this.stopReason,
     required super.messages,
     required super.rounds,
@@ -184,7 +188,9 @@ class McpChatRunner {
       )) {
         turn = _AssistantTurn(
           content: progress.content,
+          reasoningContent: progress.reasoningContent,
           toolCalls: progress.toolCalls,
+          stopReason: progress.stopReason,
         );
         for (var i = 0; i < progress.toolCalls.length; i++) {
           if (!emittedToolCallKeys.add(i)) {
@@ -200,18 +206,23 @@ class McpChatRunner {
         if (!progress.isComplete || progress.toolCalls.isNotEmpty) {
           yield McpAssistantEvent(
             delta: progress.delta,
+            reasoningDelta: progress.reasoningDelta,
             content: progress.content,
+            reasoningContent: progress.reasoningContent,
             messages: _previewMessages(workingMessages, turn),
             rounds: round,
             toolCalls: List.unmodifiable(progress.toolCalls),
             isPartial: !progress.isComplete,
-            stopReason: progress.isComplete
-                ? StopReason.toolCalls
-                : StopReason.none,
+            stopReason: progress.stopReason,
           );
         }
       }
-      turn ??= const _AssistantTurn(content: '', toolCalls: []);
+      turn ??= const _AssistantTurn(
+        content: '',
+        reasoningContent: '',
+        toolCalls: [],
+        stopReason: StopReason.none,
+      );
 
       mcpLogDebug(
         '$_logPrefix round $round assistant turn '
@@ -230,15 +241,17 @@ class McpChatRunner {
 
       if (turn.toolCalls.isEmpty) {
         mcpLogDebug(
-          '$_logPrefix run finished at round $round without tool calls',
+          '$_logPrefix run finished at round $round without tool calls, reason:${turn.stopReason}',
         );
         yield McpAssistantEvent(
           content: turn.content,
+          reasoningContent: turn.reasoningContent,
           delta: '',
+          reasoningDelta: '',
           messages: List.unmodifiable(workingMessages),
           rounds: round,
           isFinal: true,
-          stopReason: StopReason.unknown,
+          stopReason: turn.stopReason,
         );
         return;
       }
@@ -535,18 +548,30 @@ class McpChatRunner {
     void Function(String delta)? onTextDelta,
   }) async* {
     final content = StringBuffer();
+    final reasoningContent = StringBuffer();
     final toolCalls = <int, ToolCall>{};
+    var stopReason = StopReason.none;
     var chunkCount = 0;
 
     await for (final chunk in stream) {
       chunkCount++;
       var changed = false;
-      if (chunk.text.isNotEmpty) {
-        content.write(chunk.text);
-        onTextDelta?.call(chunk.text);
+      if (chunk.stopReason != StopReason.none) {
+        stopReason = chunk.stopReason;
+      }
+      if (chunk.content.isNotEmpty) {
+        content.write(chunk.content);
+        onTextDelta?.call(chunk.content);
         changed = true;
         mcpLogTrace(
-          '$_logPrefix chunk#$chunkCount textLen=${chunk.text.length}',
+          '$_logPrefix chunk#$chunkCount textLen=${chunk.content.length}',
+        );
+      }
+      if (chunk.reasoningContent.isNotEmpty) {
+        reasoningContent.write(chunk.reasoningContent);
+        changed = true;
+        mcpLogTrace(
+          '$_logPrefix chunk#$chunkCount reasoningLen=${chunk.reasoningContent.length}',
         );
       }
 
@@ -563,9 +588,12 @@ class McpChatRunner {
       if (changed) {
         yield _AssistantTurnProgress(
           content: content.toString(),
-          delta: chunk.text,
+          reasoningContent: reasoningContent.toString(),
+          delta: chunk.content,
+          reasoningDelta: chunk.reasoningContent,
           toolCalls: _sortedToolCalls(toolCalls),
           isComplete: false,
+          stopReason: stopReason,
         );
       }
     }
@@ -577,9 +605,12 @@ class McpChatRunner {
     );
     yield _AssistantTurnProgress(
       content: content.toString(),
+      reasoningContent: reasoningContent.toString(),
       toolCalls: sortedToolCalls,
       delta: '',
+      reasoningDelta: '',
       isComplete: true,
+      stopReason: stopReason,
     );
   }
 
@@ -691,21 +722,34 @@ class _ExecutedToolCall {
 
 class _AssistantTurn {
   final String content;
+  final String reasoningContent;
   final List<ToolCall> toolCalls;
+  final StopReason stopReason;
 
-  const _AssistantTurn({required this.content, required this.toolCalls});
+  const _AssistantTurn({
+    required this.content,
+    required this.reasoningContent,
+    required this.toolCalls,
+    required this.stopReason,
+  });
 }
 
 class _AssistantTurnProgress {
   final String content;
+  final String reasoningContent;
   final String delta;
+  final String reasoningDelta;
   final List<ToolCall> toolCalls;
   final bool isComplete;
+  final StopReason stopReason;
 
   const _AssistantTurnProgress({
     required this.content,
+    required this.reasoningContent,
     required this.delta,
+    required this.reasoningDelta,
     required this.toolCalls,
     required this.isComplete,
+    required this.stopReason,
   });
 }

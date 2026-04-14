@@ -103,7 +103,7 @@ class AlbatrossClient extends RWKV {
       );
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
-        yield GenerationResponse(text: '', stopReason: StopReason.canceled);
+        yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
       }
       rethrow;
@@ -184,7 +184,7 @@ class AlbatrossClient extends RWKV {
       );
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
-        yield GenerationResponse(text: '', stopReason: StopReason.canceled);
+        yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
       }
       rethrow;
@@ -258,7 +258,7 @@ class AlbatrossClient extends RWKV {
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(
-          text: '',
+          content: '',
           choices: List.filled(request.contents?.length ?? 1, ''),
           stopReason: StopReason.canceled,
         );
@@ -323,7 +323,7 @@ class AlbatrossClient extends RWKV {
       );
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
-        yield GenerationResponse(text: '', stopReason: StopReason.canceled);
+        yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
       }
       rethrow;
@@ -379,7 +379,7 @@ class AlbatrossClient extends RWKV {
       );
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
-        yield GenerationResponse(text: '', stopReason: StopReason.canceled);
+        yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
       }
       rethrow;
@@ -437,7 +437,7 @@ class AlbatrossClient extends RWKV {
       );
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
-        yield GenerationResponse(text: '', stopReason: StopReason.canceled);
+        yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
       }
       rethrow;
