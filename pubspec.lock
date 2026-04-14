@@ -117,10 +117,10 @@ packages:
     dependency: "direct main"
     description:
       name: fetch_client
-      sha256: "3766964cc49ad1d007c261d7acecea61a73581e31fdbd948b446025851766bc8"
+      sha256: "2125ffb6325e0045cc3cbfca1a87e6defe9afa27d85dc14857c1cf3835a9a636"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.0"
+    version: "1.2.1"
   ffi:
     dependency: "direct main"
     description:
