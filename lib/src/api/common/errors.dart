@@ -1,8 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 
-void checkError(dynamic error) {
+Future checkError(dynamic error) async {
   if (error is DioException) {
     switch (error.type) {
       case DioExceptionType.connectionTimeout:
@@ -17,9 +18,16 @@ void checkError(dynamic error) {
         final resp = error.response;
         final status = resp?.statusCode;
         if (resp != null && status != null && status >= 400) {
-          // final body = resp.data;
+          final body = resp.data;
           String msg =
               "HTTP ${resp.statusCode} ${resp.statusMessage}  ${error.requestOptions.uri}";
+          if (body is ResponseBody) {
+            final str = await body.stream
+                .transform(StreamTransformer.fromBind(utf8.decoder.bind))
+                .toList()
+                .then((e) => e.join());
+            msg += "\nbody: $str";
+          }
           throw Exception(msg);
         }
 

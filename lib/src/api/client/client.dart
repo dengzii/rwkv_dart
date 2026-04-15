@@ -23,6 +23,9 @@ enum ServiceType {
 }
 
 class ModelService {
+  static bool enableAlbatross = true;
+  static Set<String> albatrossOwners = {'rwkv_lightning', "albatross"};
+
   final String id;
   final Dio _dio = Dio();
   final String _accessKey;
@@ -39,7 +42,7 @@ class ModelService {
   String get url => _dio.options.baseUrl;
 
   ModelService._({required this.id, required String url, String accessKey = ''})
-      : _accessKey = accessKey {
+    : _accessKey = accessKey {
     _dio.options.baseUrl = url;
     if (accessKey.isNotEmpty) {
       _dio.options.headers['Authorization'] = 'Bearer $accessKey';
@@ -87,8 +90,14 @@ class ModelService {
       RWKV rwkv;
       bool albatross = false;
 
-      rwkv = OpenAiApiClient(url, apiKey: _accessKey);
-      _serviceType = ServiceType.openai;
+      if (enableAlbatross && albatrossOwners.contains(ownedBy)) {
+        rwkv = AlbatrossClient(url, password: _accessKey);
+        albatross = true;
+        _serviceType = ServiceType.albatross;
+      } else {
+        rwkv = OpenAiApiClient(url, apiKey: _accessKey);
+        _serviceType = ServiceType.openai;
+      }
 
       final info = ModelBean.fromJson({
         'name': data['id'],

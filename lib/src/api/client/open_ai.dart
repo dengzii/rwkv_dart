@@ -151,7 +151,7 @@ class OpenAiApiClient extends RWKV {
       final response = await _dio.get('/v1/models');
       return response.data;
     } catch (e) {
-      checkError(e);
+      await checkError(e);
       rethrow;
     }
   }
@@ -238,12 +238,9 @@ class OpenAiApiClient extends RWKV {
           headers: {'Content-Type': 'application/json'},
         ),
       );
-    } catch (e, s) {
-      checkError(e);
-      if (e is DioException) {
-        rethrow;
-      }
-      throw 'request failed';
+    } catch (e) {
+      await checkError(e);
+      rethrow;
     }
     final body = resp.data as ResponseBody;
 
@@ -314,14 +311,11 @@ class OpenAiApiClient extends RWKV {
           headers: {'Content-Type': 'application/json'},
         ),
       );
-    } catch (e, s) {
-      checkError(e);
+    } catch (e) {
+      await checkError(e);
       _cancelToken = null;
       _controllerState.add(_generationState.copyWith(isGenerating: false));
-      if (e is DioException) {
-        throw "${e.type}, $s";
-      }
-      throw 'request failed';
+      rethrow;
     }
 
     final body = resp.data as ResponseBody;
@@ -332,7 +326,7 @@ class OpenAiApiClient extends RWKV {
           : sseEventTransformerV1(1);
       yield* body.stream.transform(transformer);
     } catch (e) {
-      checkError(e);
+      await checkError(e);
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;

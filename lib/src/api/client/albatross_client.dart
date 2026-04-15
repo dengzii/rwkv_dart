@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart' hide HttpClientAdapter;
 import 'package:rwkv_dart/rwkv_dart.dart';
-import 'package:rwkv_dart/src/api/bean/openai/messages_bean.dart';
+import 'package:rwkv_dart/src/api/common/errors.dart';
 import 'package:rwkv_dart/src/api/common/sse_event_transformer_v1.dart';
 import 'package:rwkv_dart/src/logger.dart';
 
@@ -27,7 +27,10 @@ class AlbatrossClient extends RWKV {
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 300),
       sendTimeout: const Duration(seconds: 30),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        if (password != null) "Authorization": 'Bearer $password',
+      },
     ),
   );
 
@@ -70,9 +73,6 @@ class AlbatrossClient extends RWKV {
   /// [prefix] and [suffix] must have the same length.
   Future<FimResponse> fimBatch(FimRequest request) async {
     final data = request.toJson();
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     final response = await _dio.post('/FIM/v1/batch-FIM', data: data);
 
@@ -88,12 +88,12 @@ class AlbatrossClient extends RWKV {
   Stream<GenerationResponse> fimBatchStream(FimRequest request) async* {
     final data = request.toJson();
     data['stream'] = true;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     Response resp;
     try {
+      logi('/FIM/v1/batch-FIM');
+      logi(data);
+
       _cancelToken = CancelToken();
       resp = await _dio.post(
         '/FIM/v1/batch-FIM',
@@ -102,6 +102,7 @@ class AlbatrossClient extends RWKV {
         options: Options(responseType: ResponseType.stream),
       );
     } catch (e) {
+      await checkError(e);
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
@@ -113,20 +114,8 @@ class AlbatrossClient extends RWKV {
     yield* body.stream.transform(sseEventTransformerV1(request.suffix.length));
   }
 
-  // ==================== Translation API ====================
-
-  /// Batch Translation
-  ///
-  /// Endpoint: POST /translate/v1/batch-translate
-  ///
-  /// Compatible with Immersive Translate.
-  /// [sourceLang]: auto, zh-CN, zh-TW, en, ja, fr, de, es, ru
-  /// [targetLang]: zh-CN, zh-TW, en, ja, fr, de, es, ru
   Future<TranslateResponse> translateBatch(TranslateRequest request) async {
     final data = request.toJson();
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     final response = await _dio.post(
       '/translate/v1/batch-translate',
@@ -141,37 +130,10 @@ class AlbatrossClient extends RWKV {
     return TranslateResponse.fromJson(response.data);
   }
 
-  // ==================== Chat v1 API (Batch) ====================
-
-  /// Batch Chat Completions (v1)
-  ///
-  /// Endpoint: POST /v1/chat/completions
-  ///
-  /// Standard batch synchronous inference.
-  Future<ChatResponse> chatV1(ChatRequest request) async {
-    final data = _applyConfig(request).toJson();
-    data['stream'] = false;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
-
-    final response = await _dio.post('/v1/chat/completions', data: data);
-
-    if (response.data is Map && response.data['error'] != null) {
-      final error = ErrorResponse.fromJson(response.data);
-      throw Exception('Chat v1 error: ${error.error}');
-    }
-
-    return ChatResponse.fromJson(response.data);
-  }
-
   /// Stream Chat Completions (v1)
   Stream<GenerationResponse> chatV1Stream(ChatRequest request) async* {
     final data = _applyConfig(request).toJson();
     data['stream'] = true;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     Response resp;
     try {
@@ -183,6 +145,7 @@ class AlbatrossClient extends RWKV {
         options: Options(responseType: ResponseType.stream),
       );
     } catch (e) {
+      await checkError(e);
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
@@ -196,19 +159,9 @@ class AlbatrossClient extends RWKV {
     );
   }
 
-  // ==================== Chat v2 API (Continuous Batch) ====================
-
-  /// Continuous Batch Chat (v2)
-  ///
-  /// Endpoint: POST /v2/chat/completions
-  ///
-  /// Supports dynamic scheduling, automatically loads new requests after tasks complete.
   Future<ChatResponse> chatV2(ChatRequest request) async {
     final data = _applyConfig(request).toJson();
     data['stream'] = false;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     final response = await _dio.post('/v2/chat/completions', data: data);
 
@@ -239,9 +192,6 @@ class AlbatrossClient extends RWKV {
 
     final data = r.toJson();
     data['stream'] = true;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     logi('request /v2/chat/completions');
     logi(data);
@@ -256,6 +206,7 @@ class AlbatrossClient extends RWKV {
         options: Options(responseType: ResponseType.stream),
       );
     } catch (e) {
+      checkError(e);
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(
           content: '',
@@ -277,21 +228,11 @@ class AlbatrossClient extends RWKV {
   }
 
   // ==================== Chat v3 API (Fast) ====================
-
-  /// Fast Chat (v3) - Optimized for BatchSize=1
-  ///
-  /// Endpoint: POST /v3/chat/completions
-  ///
-  /// Either [contents] or [messages] must be provided.
-  /// [enableThink]: Add `<think>` tags for reasoning.
   Future<ChatResponse> chatV3(ChatRequest request) async {
     final data = _applyConfig(request).toJson();
     data['stream'] = false;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
-    final response = await _dio.post('/v3/chat/completions', data: data);
+    final response = await _dio.post('/v1/chat/completions', data: data);
 
     if (response.data is Map && response.data['error'] != null) {
       final error = ErrorResponse.fromJson(response.data);
@@ -305,23 +246,21 @@ class AlbatrossClient extends RWKV {
   Stream<GenerationResponse> chatV3Stream(ChatRequest request) async* {
     final data = _applyConfig(request).toJson();
     data['stream'] = true;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     Response resp;
     try {
-      logi('/v3/chat/completions');
+      logi('/v1/chat/completions');
       logi(data);
 
       _cancelToken = CancelToken();
       resp = await _dio.post(
-        '/v3/chat/completions',
+        '/v1/chat/completions',
         data: data,
         cancelToken: _cancelToken,
         options: Options(responseType: ResponseType.stream),
       );
     } catch (e) {
+      await checkError(e);
       if (e is DioException && e.type == DioExceptionType.cancel) {
         yield GenerationResponse(content: '', stopReason: StopReason.canceled);
         return;
@@ -346,9 +285,6 @@ class AlbatrossClient extends RWKV {
   Future<ChatResponse> chatWithState(ChatRequest request) async {
     final data = _applyConfig(request).toJson();
     data['stream'] = false;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     final response = await _dio.post('/state/chat/completions', data: data);
 
@@ -364,9 +300,6 @@ class AlbatrossClient extends RWKV {
   Stream<GenerationResponse> chatWithStateStream(ChatRequest request) async* {
     final data = _applyConfig(request).toJson();
     data['stream'] = true;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     Response resp;
     try {
@@ -401,9 +334,6 @@ class AlbatrossClient extends RWKV {
   Future<ChatResponse> chatBatchState(ChatRequest request) async {
     final data = _applyConfig(request).toJson();
     data['stream'] = false;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     final response = await _dio.post(
       '/multi_state/chat/completions',
@@ -422,9 +352,6 @@ class AlbatrossClient extends RWKV {
   Stream<GenerationResponse> chatBatchStateStream(ChatRequest request) async* {
     final data = _applyConfig(request).toJson();
     data['stream'] = true;
-    if (password != null && data['password'] == null) {
-      data['password'] = password;
-    }
 
     Response resp;
     try {
@@ -452,9 +379,8 @@ class AlbatrossClient extends RWKV {
   /// Query all session cache status
   ///
   /// Endpoint: POST /state/status
-  Future<SessionStatusResponse> getSessionStatus({String? password}) async {
-    final request = SessionStatusRequest(password: password ?? this.password);
-    final response = await _dio.post('/state/status', data: request.toJson());
+  Future<SessionStatusResponse> getSessionStatus() async {
+    final response = await _dio.get('/state/status');
 
     if (response.data is Map && response.data['error'] != null) {
       final error = ErrorResponse.fromJson(response.data);
@@ -475,7 +401,6 @@ class AlbatrossClient extends RWKV {
     final request = DeleteSessionRequest(
       sessionId: sessionId,
       deletePrefix: deletePrefix,
-      password: password ?? this.password,
     );
     final response = await _dio.post('/state/delete', data: request.toJson());
 
@@ -486,49 +411,7 @@ class AlbatrossClient extends RWKV {
 
   @override
   Stream<GenerationResponse> chat(ChatParam param) async* {
-    // Use v3 API for chat by default (optimized for BatchSize=1)
-    // Convert ChatParam to ChatRequest
-    final messages = <MessageBean>[];
-    if (param.prompt != null && param.prompt!.trim().isNotEmpty) {
-      messages.add(MessageBean(role: 'system', content: param.prompt!));
-    }
-    if (param.prompt != null && param.prompt!.trim().isNotEmpty) {
-      messages.add(MessageBean(role: 'system', content: param.prompt!.trim()));
-    }
-    for (final m in param.messages ?? []) {
-      messages.add(MessageBean(role: m.role, content: m.content));
-    }
-
-    final contents = <String>[];
-    for (final m in param.batch ?? []) {
-      contents.add(m.content);
-    }
-
-    final batch = param.batch != null;
-
-    final request = ChatRequest(
-      messages: batch ? null : messages,
-      contents: batch ? contents : null,
-      maxTokens: param.maxTokens ?? _decodeParam.maxTokens,
-      temperature: _decodeParam.temperature,
-      topK: _decodeParam.topK,
-      topP: _decodeParam.topP,
-      alphaPresence: _decodeParam.presencePenalty,
-      alphaFrequency: _decodeParam.frequencyPenalty,
-      stopTokens: param.stopSequence?.map((e) => e.hashCode).toList(),
-      stream: true,
-      enableThink: param.reasoning == null
-          ? (param.reasoning == null
-                ? null
-                : param.reasoning != ReasoningEffort.none)
-          : param.reasoning != ReasoningEffort.none,
-    );
-
-    if (param.batch != null) {
-      yield* chatV2Stream(request);
-    } else {
-      yield* chatV3Stream(request);
-    }
+    yield* chatOpenAi(param);
   }
 
   @override
@@ -542,7 +425,7 @@ class AlbatrossClient extends RWKV {
       topP: _decodeParam.topP,
       alphaPresence: _decodeParam.presencePenalty,
       alphaFrequency: _decodeParam.frequencyPenalty,
-      stopTokens: param.stopSequence?.map((e) => e.hashCode).toList(),
+      stopTokens: param.stopSequence?.toList(),
       stream: true,
     );
 
@@ -660,5 +543,91 @@ class AlbatrossClient extends RWKV {
     throw UnimplementedError(
       'textToSpeech is not supported in AlbatrossClient',
     );
+  }
+
+  Stream<GenerationResponse> chatOpenAi(ChatParam param) async* {
+    final history = param.messages!;
+    final reasoning = param.reasoning?.name ?? ReasoningEffort.none.name;
+    final enableThinking = reasoning != 'none';
+    final path = '/openai/v1/chat/completions';
+    final data = <String, dynamic>{
+      ...?param.additional,
+      'model': param.model,
+      'stream': true,
+      'max_tokens':
+          param.maxCompletionTokens ??
+          param.maxTokens ??
+          _decodeParam.maxTokens,
+      'temperature': _decodeParam.temperature,
+      'top_p': _decodeParam.topP,
+      'frequency_penalty': _decodeParam.frequencyPenalty,
+      'presence_penalty': _decodeParam.presencePenalty,
+      'stop': param.stopSequence,
+      'penalty_decay': _decodeParam.penaltyDecay,
+
+      if (enableThinking) 'reasoning_effort': reasoning,
+      if (param.toolChoice != null) 'tool_choice': param.toolChoice!.toJson(),
+      if (param.parallelToolCalls != null)
+        'parallel_tool_calls': param.parallelToolCalls,
+      'messages': [
+        if (param.prompt != null && param.prompt!.trim().isNotEmpty)
+          _serializeChatCompletionMessage(
+            ChatMessage(role: 'system', content: param.prompt!.trim()),
+          ),
+        for (final msg in history) _serializeChatCompletionMessage(msg),
+      ],
+      if (param.tools != null && param.tools!.isNotEmpty)
+        'tools': param.tools!.map((e) => e.toJson()).toList(),
+    };
+
+    logd(path);
+    logi(data);
+
+    Response resp;
+    try {
+      _cancelToken = CancelToken();
+      resp = await _dio.post(
+        path,
+        data: data,
+        cancelToken: _cancelToken,
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: {'Content-Type': 'application/json'},
+        ),
+      );
+    } catch (e) {
+      await checkError(e);
+      if (e is DioException) {
+        rethrow;
+      }
+      throw 'request failed';
+    }
+    final body = resp.data as ResponseBody;
+
+    try {
+      final transformer = sseEventTransformerV1(param.batch?.length);
+      yield* body.stream.transform(transformer);
+    } catch (e) {
+      if (e is DioException && e.type == DioExceptionType.cancel) {
+        yield GenerationResponse(content: '', stopReason: StopReason.canceled);
+        return;
+      }
+      rethrow;
+    } finally {
+      _cancelToken = null;
+    }
+  }
+
+  Map<String, dynamic> _serializeChatCompletionMessage(ChatMessage message) {
+    final hasToolCalls = message.toolCalls?.isNotEmpty ?? false;
+    return {
+      'role': message.role,
+      if (message.content.isNotEmpty || !hasToolCalls)
+        'content': message.content,
+      if (message.toolCallId != null && message.toolCallId!.isNotEmpty)
+        'tool_call_id': message.toolCallId,
+      if (hasToolCalls)
+        'tool_calls': message.toolCalls!.map((e) => e.toJson()).toList(),
+    };
   }
 }
