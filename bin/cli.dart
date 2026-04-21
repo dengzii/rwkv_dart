@@ -64,6 +64,8 @@ void main(List<String> args) async {
     } else {
       await _runInteractive(rwkv, options);
     }
+  } catch (e) {
+    stderr.writeln('Error: $e');
   } finally {
     if (rwkv != null && (!options.server || !serverStarted)) {
       await rwkv.release();

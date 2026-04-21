@@ -16,6 +16,8 @@
 - 支持 tool call 数据结构，兼容函数调用场景
 - 支持 MCP 客户端、MCP Hub、MCP Chat Runner
 - 支持启动一个简单的 OpenAI 兼容 HTTP 服务 `RwkvHttpApiService`
+- 支持 worker 子进程模式，便于推理隔离到独立进程
+- 提供 CLI 工具，支持交互式聊天
 - 提供统一解码参数、生成状态、停止生成等能力
 
 ## 安装
@@ -135,6 +137,35 @@ Future<void> main() async {
 
 ## 进阶能力
 
+### Worker 模式
+
+worker 模式会把 RWKV 实例放到独立子进程中运行，主进程通过标准输入/输出和 worker 通信。它适合 CLI、桌面应用或长时间运行的服务场景，可以降低模型推理对主进程的影响，也方便单独管理 worker 生命周期。
+
+可以先编译 worker：
+
+```bash
+dart compile exe bin/worker.dart -o worker.exe
+```
+
+然后通过 `RWKVProcess` 连接该 worker 进程。完整示例见 `example/worker_process.dart`。
+
+### CLI 工具
+
+`bin/cli.dart` 提供命令行入口，支持三种常用方式：
+
+```bash
+# 本地模型交互式聊天
+dart run bin/cli.dart -model <model> -vocab <tokenizer>
+
+# 通过 provider 连接 OpenAI 兼容服务
+dart run bin/cli.dart -provider <url> -model-id <model-id> [-api-key <key>]
+
+# 启动 OpenAI 风格 API 服务
+dart run bin/cli.dart -server -model <model> -vocab <tokenizer> -port 8000
+```
+
+交互式模式支持 `/help`、`/history`、`/clear`、`/stop` 等命令，也可以在运行时调整温度、top-p、max tokens 等解码参数。需要构建可执行文件时可使用 `tool/build.dart` 或 `scripts/build_all.*`。
+
 ### 启动 OpenAI 兼容服务
 
 ```dart
@@ -149,4 +180,3 @@ Future<void> main() async {
   );
 }
 ```
-

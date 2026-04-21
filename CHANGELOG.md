@@ -1,3 +1,7 @@
+## 1.1.5
+
+- feat: run in worker process, cli tools
+
 ## 1.1.4
 
 - update: chat response split reasoning content
