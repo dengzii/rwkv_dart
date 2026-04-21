@@ -136,7 +136,7 @@ class OpenAiApiClient extends RWKV {
       connectTimeout: const Duration(minutes: 3),
       receiveTimeout: const Duration(minutes: 3),
       sendTimeout: const Duration(minutes: 3),
-      headers: {'Authorization': 'Bearer $apiKey'},
+      headers: {if (apiKey.isNotEmpty) 'Authorization': 'Bearer $apiKey'},
     ),
   )..httpClientAdapter = adapter.createAdapter();
 
@@ -395,8 +395,10 @@ class OpenAiApiClient extends RWKV {
   }
 
   @override
-  Future<dynamic> release() {
-    throw UnimplementedError();
+  Future<dynamic> release() async {
+    _cancelToken?.cancel();
+    _cancelToken = null;
+    _dio.close(force: true);
   }
 
   @override

@@ -29,7 +29,8 @@ class AlbatrossClient extends RWKV {
       sendTimeout: const Duration(seconds: 30),
       headers: {
         'Content-Type': 'application/json',
-        if (password != null) "Authorization": 'Bearer $password',
+        if (password != null && password!.isNotEmpty)
+          "Authorization": 'Bearer $password',
       },
     ),
   );
