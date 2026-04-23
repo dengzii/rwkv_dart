@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:rwkv_dart/rwkv_dart.dart';
-import 'package:rwkv_dart/src/worker/rwkv.dart';
 
 Future<void> main(List<String> args) async {
   final executable = Platform.isWindows ? r'./worker.exe' : './worker';

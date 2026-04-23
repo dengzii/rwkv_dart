@@ -2,6 +2,7 @@ import 'package:logging/logging.dart';
 import 'package:rwkv_dart/rwkv_dart.dart';
 import 'package:rwkv_dart/src/api/client/open_ai.dart';
 import 'package:rwkv_dart/src/logger.dart';
+import 'package:rwkv_dart/src/worker/rwkv.dart' as worker;
 
 import 'backend.dart'
     if (dart.library.io) 'package:rwkv_dart/src/backend.dart'
@@ -9,6 +10,8 @@ import 'backend.dart'
 import 'isolate.dart'
     if (dart.library.io) 'package:rwkv_dart/src/isolate.dart'
     if (dart.library.html) 'package:rwkv_dart/src/web/isolate.dart';
+
+typedef RWKVProcess = worker.RWKVProcess;
 
 enum RWKVLogLevel { verbose, info, debug, warning, error }
 

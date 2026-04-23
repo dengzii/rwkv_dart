@@ -13,11 +13,11 @@ class WorkerIPC {
   StreamSubscription<String>? _subscription;
   final Completer<void> _done = Completer<void>();
   final Map<String, StreamSubscription<dynamic>> _streamSubscriptions = {};
+  Future<void> _sendQueue = Future<void>.value();
   bool _closed = false;
 
-  WorkerIPC(this.rwkv, {Stream<List<int>>? input, IOSink? output})
-    : input = input ?? stdin,
-      output = output ?? stdout;
+  WorkerIPC(this.rwkv, {required Stream<List<int>> input, required this.output})
+    : input = input.cast<List<int>>();
 
   Future<void> start() {
     _subscription = input
@@ -151,11 +151,15 @@ class WorkerIPC {
   }
 
   Future<void> _send(WorkerMessage message) async {
-    if (_closed) {
-      return;
-    }
-    output.writeln(message.toLine());
-    await output.flush();
+    final sendFuture = _sendQueue.then((_) async {
+      if (_closed) {
+        return;
+      }
+      output.writeln(message.toLine());
+      await output.flush();
+    });
+    _sendQueue = sendFuture.catchError((Object _, StackTrace _) {});
+    await sendFuture;
   }
 
   Future<void> close() async {

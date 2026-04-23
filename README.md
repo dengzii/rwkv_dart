@@ -139,7 +139,7 @@ Future<void> main() async {
 
 ### Worker 模式
 
-worker 模式会把 RWKV 实例放到独立子进程中运行，主进程通过标准输入/输出和 worker 通信。它适合 CLI、桌面应用或长时间运行的服务场景，可以降低模型推理对主进程的影响，也方便单独管理 worker 生命周期。
+worker 模式会把 RWKV 实例放到独立子进程中运行，主进程通过本地 loopback socket 和 worker 通信。它适合 CLI、桌面应用或长时间运行的服务场景，可以降低模型推理对主进程的影响，也方便单独管理 worker 生命周期。
 
 可以先编译 worker：
 

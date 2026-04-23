@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:rwkv_dart/src/logger.dart';
 import 'package:rwkv_dart/src/rwkv.dart';
+import 'package:rwkv_dart/src/worker/ipc.dart';
 import 'package:rwkv_dart/src/worker/serialize.dart';
 
 class RWKVProcess implements RWKV {
@@ -12,12 +14,18 @@ class RWKVProcess implements RWKV {
   final Map<String, String>? environment;
   final bool includeParentEnvironment;
   final bool runInShell;
+  final Duration ipcConnectTimeout;
   final Duration shutdownTimeout;
 
   Process? _process;
   Future<void>? _startFuture;
+  IOSink? _protocolOutput;
+  Socket? _ipcSocket;
+  ServerSocket? _ipcServer;
+  StreamSubscription<String>? _protocolSubscription;
   StreamSubscription<String>? _stdoutSubscription;
-  StreamSubscription<List<int>>? _stderrSubscription;
+  StreamSubscription<String>? _stderrSubscription;
+  Future<void> _sendQueue = Future<void>.value();
   bool _closing = false;
 
   final Map<String, Completer<dynamic>> _pendingFutures = {};
@@ -30,6 +38,7 @@ class RWKVProcess implements RWKV {
     this.environment,
     this.includeParentEnvironment = true,
     this.runInShell = false,
+    this.ipcConnectTimeout = const Duration(seconds: 2),
     this.shutdownTimeout = const Duration(seconds: 5),
   }) : arguments = List.unmodifiable(arguments);
 
@@ -42,40 +51,48 @@ class RWKVProcess implements RWKV {
 
   Future<void> _start() async {
     _closing = false;
-    final process = await Process.start(
-      executable,
-      arguments,
-      workingDirectory: workingDirectory,
-      environment: environment,
-      includeParentEnvironment: includeParentEnvironment,
-      runInShell: runInShell,
-    );
-    _process = process;
-    _stdoutSubscription = process.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen(
-          _handleLine,
-          onError: (Object error, StackTrace stackTrace) {
-            _failPending('RWKV worker stdout error: $error');
-          },
-          onDone: () {
-            if (!_closing) {
-              _failPending('RWKV worker stdout closed');
+    try {
+      final socketConfig = await _createSocketIpcConfig();
+      final process = await Process.start(
+        executable,
+        [...arguments, ...socketConfig.toArgs()],
+        workingDirectory: workingDirectory,
+        environment: environment,
+        includeParentEnvironment: includeParentEnvironment,
+        runInShell: runInShell,
+      );
+      _process = process;
+      _stdoutSubscription = process.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            if (line.trim().isNotEmpty) {
+              stderr.writeln('[rwkv-worker][stdout] $line');
             }
-          },
-          cancelOnError: false,
-        );
-    _stderrSubscription = process.stderr.listen(stderr.add);
-    process.exitCode.then((code) {
-      _process = null;
-      _startFuture = null;
-      if (!_closing ||
-          _pendingFutures.isNotEmpty ||
-          _pendingStreams.isNotEmpty) {
-        _failPending('RWKV worker exited with code $code');
-      }
-    });
+          });
+      _stderrSubscription = process.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            if (line.trim().isNotEmpty) {
+              stderr.writeln(line);
+            }
+          });
+      await _connectSocketIpc();
+
+      process.exitCode.then((code) {
+        _process = null;
+        _startFuture = null;
+        if (!_closing ||
+            _pendingFutures.isNotEmpty ||
+            _pendingStreams.isNotEmpty) {
+          _failPending('RWKV worker exited with code $code');
+        }
+      });
+    } catch (_) {
+      await _shutdownProcess();
+      rethrow;
+    }
   }
 
   void _handleLine(String line) {
@@ -85,7 +102,7 @@ class RWKVProcess implements RWKV {
     try {
       _routeMessage(WorkerMessage.fromLine(line));
     } catch (e) {
-      _failPending('Invalid RWKV worker message: $e');
+      logi('[worker] $line');
     }
   }
 
@@ -171,12 +188,65 @@ class RWKVProcess implements RWKV {
   }
 
   Future<void> _send(WorkerMessage message) async {
-    final process = _process;
-    if (process == null) {
-      throw StateError('RWKV worker process is not running');
+    final sendFuture = _sendQueue.then((_) async {
+      final output = _protocolOutput;
+      if (output == null) {
+        throw StateError('RWKV worker process is not running');
+      }
+      output.writeln(message.toLine());
+      await output.flush();
+    });
+    _sendQueue = sendFuture.catchError((Object _, StackTrace _) {});
+    await sendFuture;
+  }
+
+  Future<WorkerSocketIpcConfig> _createSocketIpcConfig() async {
+    final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    _ipcServer = server;
+    return WorkerSocketIpcConfig(
+      host: InternetAddress.loopbackIPv4.address,
+      port: server.port,
+    );
+  }
+
+  Future<void> _connectSocketIpc() async {
+    final server = _ipcServer;
+    if (server == null) {
+      throw StateError('RWKV worker IPC server is not running');
     }
-    process.stdin.writeln(message.toLine());
-    await process.stdin.flush();
+
+    try {
+      final socket = await server.first.timeout(
+        ipcConnectTimeout,
+        onTimeout: () {
+          throw TimeoutException(
+            'RWKV worker failed to connect to the IPC socket within '
+            '${ipcConnectTimeout.inMilliseconds}ms',
+          );
+        },
+      );
+      _ipcSocket = socket;
+      _protocolOutput = socket;
+      _protocolSubscription = socket
+          .cast<List<int>>()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(
+            _handleLine,
+            onError: (Object error, StackTrace stackTrace) {
+              _failPending('RWKV worker socket error: $error');
+            },
+            onDone: () {
+              if (!_closing) {
+                _failPending('RWKV worker socket closed');
+              }
+            },
+            cancelOnError: false,
+          );
+    } finally {
+      await server.close();
+      _ipcServer = null;
+    }
   }
 
   void _failPending(String error) {
@@ -201,11 +271,14 @@ class RWKVProcess implements RWKV {
     final process = _process;
     _process = null;
     _startFuture = null;
+    final socket = _ipcSocket;
+    _ipcSocket = null;
+    _protocolOutput = null;
 
     try {
-      await process?.stdin.close();
+      await socket?.close();
     } catch (_) {
-      // The worker may have already closed stdin while exiting.
+      // The worker may have already closed the IPC channel while exiting.
     }
 
     if (process != null) {
@@ -217,10 +290,14 @@ class RWKVProcess implements RWKV {
       }
     }
 
+    await _protocolSubscription?.cancel();
     await _stdoutSubscription?.cancel();
     await _stderrSubscription?.cancel();
+    await _ipcServer?.close();
+    _protocolSubscription = null;
     _stdoutSubscription = null;
     _stderrSubscription = null;
+    _ipcServer = null;
   }
 
   @override
