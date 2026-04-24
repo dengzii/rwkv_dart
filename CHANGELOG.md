@@ -1,3 +1,7 @@
+## 1.1.6
+
+- fix: worker process IPC changed to socket
+
 ## 1.1.5
 
 - feat: run in worker process, cli tools
