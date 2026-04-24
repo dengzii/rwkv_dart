@@ -66,6 +66,30 @@ abstract class RWKV extends LLM {
   factory RWKV.isolated([RWKVFactory factory = createRWKVFfiWrapBackend]) =>
       RWKVIsolateProxy(factory);
 
+  factory RWKV.worker(
+    String executable, {
+    List<String> arguments = const [],
+    String? workingDirectory,
+    Map<String, String>? environment,
+    bool includeParentEnvironment = true,
+    bool runInShell = false,
+    Duration ipcConnectTimeout = const Duration(seconds: 2),
+    Duration heartbeatInterval = const Duration(seconds: 15),
+    Duration heartbeatTimeout = const Duration(seconds: 5),
+    Duration shutdownTimeout = const Duration(seconds: 5),
+  }) => RWKVProcess(
+    executable,
+    arguments: arguments,
+    workingDirectory: workingDirectory,
+    environment: environment,
+    includeParentEnvironment: includeParentEnvironment,
+    runInShell: runInShell,
+    ipcConnectTimeout: ipcConnectTimeout,
+    heartbeatInterval: heartbeatInterval,
+    heartbeatTimeout: heartbeatTimeout,
+    shutdownTimeout: shutdownTimeout,
+  );
+
   Future init([InitParam? param]);
 
   Future setLogLevel(RWKVLogLevel level) async {
@@ -79,26 +103,11 @@ abstract class RWKV extends LLM {
 
   Future loadInitialState(String statePath);
 
-  Future<String> getSocName();
-
-  Future<String> getHtpArch();
-
   Future<String> dumpLog();
 
   Future<GenerationState> getGenerationState();
 
   Stream<GenerationState> generationStateStream();
-
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param);
-
-  Future<String> dumpStateInfo();
-
-  Future setImage(String path);
-
-  Future setImageId(String id);
-
-  /// wav audio data stream
-  Stream<List<double>> textToSpeech(TextToSpeechParam param);
 
   /// Clear the backend runtime state.
   Future clearState();
@@ -386,34 +395,6 @@ class GenerationState {
   String toString() {
     return 'GenerationState(isGenerating: $isGenerating, prefillProgress: $prefillProgress, prefillSpeed: $prefillSpeed, decodeSpeed: $decodeSpeed, timestamp: $timestamp)';
   }
-}
-
-class RunEvaluationParam {
-  final String source;
-  final String target;
-
-  RunEvaluationParam({required this.source, required this.target});
-}
-
-class RunEvaluationResult {
-  final List<bool> corrects;
-  final List<double> logits;
-
-  RunEvaluationResult({required this.corrects, required this.logits});
-}
-
-class TextToSpeechParam {
-  final String text;
-  final String outputAudioPath;
-  final String inputAudioPath;
-  final String? inputAudioText;
-
-  TextToSpeechParam({
-    required this.text,
-    required this.outputAudioPath,
-    required this.inputAudioPath,
-    this.inputAudioText,
-  });
 }
 
 class GenerationResponse {

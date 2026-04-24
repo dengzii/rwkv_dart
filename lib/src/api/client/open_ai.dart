@@ -349,28 +349,13 @@ class OpenAiApiClient extends RWKV {
   }
 
   @override
-  Future<String> dumpStateInfo() {
-    throw UnimplementedError();
-  }
-
-  @override
   Stream<GenerationState> generationStateStream() => _controllerState.stream;
 
   @override
   Future<GenerationState> getGenerationState() async => _generationState;
 
   @override
-  Future<String> getHtpArch() {
-    throw UnimplementedError();
-  }
-
-  @override
   Future<int> getSeed() {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<String> getSocName() {
     throw UnimplementedError();
   }
 
@@ -402,23 +387,8 @@ class OpenAiApiClient extends RWKV {
   }
 
   @override
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) {
-    throw UnimplementedError();
-  }
-
-  @override
   Future<dynamic> setDecodeParam(DecodeParam param) async {
     _decodeParam = param;
-  }
-
-  @override
-  Future<dynamic> setImage(String path) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<dynamic> setImageId(String id) {
-    throw UnimplementedError();
   }
 
   @override
@@ -432,10 +402,6 @@ class OpenAiApiClient extends RWKV {
     _cancelToken = null;
   }
 
-  @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) {
-    throw UnimplementedError();
-  }
 }
 
 StreamTransformer<Uint8List, String> unit8ListToString =

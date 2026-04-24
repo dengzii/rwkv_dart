@@ -57,6 +57,10 @@ class WorkerIPC {
   }
 
   Future<void> _handleMessage(WorkerMessage message) async {
+    if (message.method == WorkerMethod.heartbeat) {
+      await _send(message.copyWith(param: null));
+      return;
+    }
     if (message.method == WorkerMethod.cancelStream) {
       await _cancelStream(message);
       return;
@@ -115,20 +119,10 @@ class WorkerIPC {
         return rwkv.generate(param as GenerationParam);
       case WorkerMethod.release:
         return rwkv.release();
-      case WorkerMethod.getHtpArch:
-        return rwkv.getHtpArch();
-      case WorkerMethod.dumpStateInfo:
-        return rwkv.dumpStateInfo();
       case WorkerMethod.dumpLog:
         return rwkv.dumpLog();
-      case WorkerMethod.getSocName:
-        return rwkv.getSocName();
       case WorkerMethod.loadInitialState:
         return rwkv.loadInitialState(param as String);
-      case WorkerMethod.textToSpeech:
-        return rwkv.textToSpeech(param as TextToSpeechParam);
-      case WorkerMethod.setImage:
-        return rwkv.setImage(param as String);
       case WorkerMethod.setDecodeParam:
         return rwkv.setDecodeParam(param as DecodeParam);
       case WorkerMethod.getGenerationState:
@@ -141,10 +135,6 @@ class WorkerIPC {
         return rwkv.getSeed();
       case WorkerMethod.setSeed:
         return rwkv.setSeed(param as int);
-      case WorkerMethod.setImageId:
-        return rwkv.setImageId(param as String);
-      case WorkerMethod.runEvaluation:
-        return rwkv.runEvaluation(param as RunEvaluationParam);
       default:
         throw UnsupportedError('Unknown worker method: $method');
     }
@@ -197,9 +187,6 @@ class Worker implements RWKV {
   Future<String> dumpLog() => _instance.dumpLog();
 
   @override
-  Future<String> dumpStateInfo() => _instance.dumpStateInfo();
-
-  @override
   Stream<GenerationResponse> generate(GenerationParam param) {
     return _instance.generate(param);
   }
@@ -214,13 +201,7 @@ class Worker implements RWKV {
       _instance.getGenerationState();
 
   @override
-  Future<String> getHtpArch() => _instance.getHtpArch();
-
-  @override
   Future<int> getSeed() => _instance.getSeed();
-
-  @override
-  Future<String> getSocName() => _instance.getSocName();
 
   @override
   Future init([InitParam? param]) => _instance.init(param);
@@ -237,18 +218,7 @@ class Worker implements RWKV {
   Future release() => _instance.release();
 
   @override
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) {
-    return _instance.runEvaluation(param);
-  }
-
-  @override
   Future setDecodeParam(DecodeParam param) => _instance.setDecodeParam(param);
-
-  @override
-  Future setImage(String path) => _instance.setImage(path);
-
-  @override
-  Future setImageId(String id) => _instance.setImageId(id);
 
   @override
   Future setLogLevel(RWKVLogLevel level) => _instance.setLogLevel(level);
@@ -258,9 +228,4 @@ class Worker implements RWKV {
 
   @override
   Future stopGenerate() => _instance.stopGenerate();
-
-  @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) {
-    return _instance.textToSpeech(param);
-  }
 }

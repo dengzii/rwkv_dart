@@ -479,13 +479,6 @@ class AlbatrossClient extends RWKV {
   }
 
   @override
-  Future<String> dumpStateInfo() {
-    throw UnimplementedError(
-      'dumpStateInfo is not supported in AlbatrossClient',
-    );
-  }
-
-  @override
   Stream<GenerationState> generationStateStream() async* {
     // Not applicable for HTTP client
   }
@@ -496,18 +489,8 @@ class AlbatrossClient extends RWKV {
   }
 
   @override
-  Future<String> getHtpArch() {
-    throw UnimplementedError('getHtpArch is not supported in AlbatrossClient');
-  }
-
-  @override
   Future<int> getSeed() {
     throw UnimplementedError('getSeed is not supported in AlbatrossClient');
-  }
-
-  @override
-  Future<String> getSocName() {
-    throw UnimplementedError('getSocName is not supported in AlbatrossClient');
   }
 
   @override
@@ -518,32 +501,8 @@ class AlbatrossClient extends RWKV {
   }
 
   @override
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) {
-    throw UnimplementedError(
-      'runEvaluation is not supported in AlbatrossClient',
-    );
-  }
-
-  @override
-  Future<dynamic> setImage(String path) {
-    throw UnimplementedError('setImage is not supported in AlbatrossClient');
-  }
-
-  @override
-  Future<dynamic> setImageId(String id) {
-    throw UnimplementedError('setImageId is not supported in AlbatrossClient');
-  }
-
-  @override
   Future<dynamic> setSeed(int seed) {
     throw UnimplementedError('setSeed is not supported in AlbatrossClient');
-  }
-
-  @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) {
-    throw UnimplementedError(
-      'textToSpeech is not supported in AlbatrossClient',
-    );
   }
 
   Stream<GenerationResponse> chatOpenAi(ChatParam param) async* {

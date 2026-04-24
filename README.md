@@ -2,10 +2,13 @@
 
 `rwkv_dart` 是一个面向 Dart / Flutter 的 RWKV SDK，提供统一的 LLM 抽象。
 
-它既可以直接加载本地 RWKV 模型做推理，也可以把 OpenAI 兼容接口、Albatross 服务、MCP 工具调用能力统一到同一套
+它既可以直接加载本地 RWKV 模型做推理，也可以把 OpenAI 兼容接口、rwkv_lightning 服务、MCP 工具调用能力统一到同一套
 `RWKV` / `LLM` API 上。
 
-底层本地推理基于 FFI 对接 [rwkv-mobile](https://github.com/MollySophia/rwkv-mobile/releases)。
+## 相关项目
+
+- [rwkv-mobile](https://github.com/MollySophia/rwkv-mobile/releases)
+- [rwkv_lightning_libtorch](https://github.com/Alic-Li/rwkv_lightning_libtorch)
 
 ## 特性
 
@@ -139,7 +142,8 @@ Future<void> main() async {
 
 ### Worker 模式
 
-worker 模式会把 RWKV 实例放到独立子进程中运行，主进程通过本地 loopback socket 和 worker 通信。它适合 CLI、桌面应用或长时间运行的服务场景，可以降低模型推理对主进程的影响，也方便单独管理 worker 生命周期。
+worker 模式会把 RWKV 实例放到独立子进程中运行，主进程通过本地 loopback socket 和 worker 通信。它适合
+CLI、桌面应用或长时间运行的服务场景，可以降低模型推理对主进程的影响，也方便单独管理 worker 生命周期。
 
 可以先编译 worker：
 
@@ -148,6 +152,9 @@ dart compile exe bin/worker.dart -o worker.exe
 ```
 
 然后通过 `RWKVProcess` 连接该 worker 进程。完整示例见 `example/worker_process.dart`。
+
+如果需要让第三方实现兼容
+worker，可直接参考协议文档：[docs/worker_ipc_protocol.md](/E:/dev/rwkv_dart/docs/worker_ipc_protocol.md)。
 
 ### CLI 工具
 
@@ -164,7 +171,8 @@ dart run bin/cli.dart -provider <url> -model-id <model-id> [-api-key <key>]
 dart run bin/cli.dart -server -model <model> -vocab <tokenizer> -port 8000
 ```
 
-交互式模式支持 `/help`、`/history`、`/clear`、`/stop` 等命令，也可以在运行时调整温度、top-p、max tokens 等解码参数。需要构建可执行文件时可使用 `tool/build.dart` 或 `scripts/build_all.*`。
+交互式模式支持 `/help`、`/history`、`/clear`、`/stop` 等命令，也可以在运行时调整温度、top-p、max tokens
+等解码参数。需要构建可执行文件时可使用 `tool/build.dart` 或 `scripts/build_all.*`。
 
 ### 启动 OpenAI 兼容服务
 

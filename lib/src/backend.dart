@@ -508,11 +508,6 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future setImage(String path) async {
-    throw Exception('Not implemented');
-  }
-
-  @override
   Future setDecodeParam(DecodeParam param) async {
     logd('set decode param: $param');
     decodeParam = param;
@@ -944,18 +939,6 @@ class RWKVBackend implements RWKV {
   }
 
   @override
-  Future<String> getHtpArch() async {
-    final ptr = _rwkv.rwkvmobile_get_htp_arch();
-    return ptr.toDartString();
-  }
-
-  @override
-  Future<String> getSocName() async {
-    final ptr = _rwkv.rwkvmobile_get_soc_name();
-    return ptr.toDartString();
-  }
-
-  @override
   Future<int> getSeed() async {
     final retVal = _rwkv.rwkvmobile_runtime_get_seed(_handle, _modelId);
     return retVal;
@@ -967,77 +950,4 @@ class RWKVBackend implements RWKV {
     _tryThrowErrorRetVal(retVal);
   }
 
-  @override
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) async {
-    final arena = Arena();
-    final r = _rwkv.rwkvmobile_runtime_run_evaluation(
-      _handle,
-      _modelId,
-      param.source.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
-      param.target.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
-    );
-    final List<double> logits = r.logits_vals.asTypedList(r.count).toList();
-    final List<bool> corrects = r.corrects
-        .cast<ffi.Int32>()
-        .asTypedList(r.count)
-        .toList()
-        .map((e) => e != 0)
-        .toList();
-    _rwkv.rwkvmobile_runtime_free_evaluation_results(r);
-    arena.releaseAll();
-    return RunEvaluationResult(logits: logits, corrects: corrects);
-  }
-
-  @override
-  Future<String> dumpStateInfo() async {
-    final r = _rwkv.rwkvmobile_get_state_cache_info(_handle, _modelId);
-    try {
-      return r.cast<Utf8>().toDartString();
-    } finally {
-      _rwkv.rwkvmobile_free_state_cache_info(r);
-    }
-  }
-
-  @override
-  Future setImageId(String id) async {
-    final arena = Arena();
-    try {
-      final retVal = _rwkv.rwkvmobile_runtime_set_image_unique_identifier(
-        _handle,
-        id.toNativeUtf8(allocator: arena).cast<ffi.Char>(),
-      );
-      _tryThrowErrorRetVal(retVal);
-    } finally {
-      arena.releaseAll();
-    }
-  }
-
-  @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) async* {
-    _AsyncNativeArguments? args;
-    _lastGenerationAt = DateTime.now().millisecondsSinceEpoch;
-    await _checkGenerationState();
-    try {
-      args = _beginGenerationArgs();
-      final retVal = _rwkv.rwkvmobile_runtime_run_spark_tts_streaming_async(
-        _handle,
-        _modelId,
-        args.allocUtf8(param.text),
-        args.allocUtf8(param.inputAudioText ?? ""),
-        args.allocUtf8(param.inputAudioPath),
-        args.allocUtf8(param.outputAudioPath),
-      );
-      _tryThrowErrorRetVal(retVal);
-      logd(
-        'tts streaming started, '
-        'text:${param.text}, '
-        'audioText:${param.inputAudioText}, '
-        'audioPath:${param.inputAudioPath}'
-        'output:${param.outputAudioPath}',
-      );
-      yield* _pollingGenerationResult(type: GenerationType.tts).cast();
-    } finally {
-      _releaseGenerationArgs(args);
-    }
-  }
 }

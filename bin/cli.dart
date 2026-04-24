@@ -508,9 +508,6 @@ Future<_CommandResult> _handleInteractiveCommand(
       await rwkv.setSeed(next);
       stdout.writeln('Seed: $next');
       return _CommandResult.keepGoing(decodeParam, reasoning);
-    case '/state':
-      stdout.writeln(await rwkv.dumpStateInfo());
-      return _CommandResult.keepGoing(decodeParam, reasoning);
     default:
       stdout.writeln('Unknown command: $command. Type /help for commands.');
       return _CommandResult.keepGoing(decodeParam, reasoning);

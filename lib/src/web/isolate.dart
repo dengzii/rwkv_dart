@@ -21,11 +21,6 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
-  Future<String> dumpStateInfo() {
-    throw UnimplementedError();
-  }
-
-  @override
   Stream<GenerationResponse> generate(GenerationParam param) {
     throw UnimplementedError();
   }
@@ -41,17 +36,7 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
-  Future<String> getHtpArch() {
-    throw UnimplementedError();
-  }
-
-  @override
   Future<int> getSeed() {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<String> getSocName() {
     throw UnimplementedError();
   }
 
@@ -76,22 +61,7 @@ class RWKVIsolateProxy implements RWKV {
   }
 
   @override
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) {
-    throw UnimplementedError();
-  }
-
-  @override
   Future<dynamic> setDecodeParam(DecodeParam param) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<dynamic> setImage(String path) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<dynamic> setImageId(String id) {
     throw UnimplementedError();
   }
 
@@ -110,8 +80,4 @@ class RWKVIsolateProxy implements RWKV {
     throw UnimplementedError();
   }
 
-  @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) {
-    throw UnimplementedError();
-  }
 }

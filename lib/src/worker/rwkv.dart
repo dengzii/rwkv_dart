@@ -15,6 +15,8 @@ class RWKVProcess implements RWKV {
   final bool includeParentEnvironment;
   final bool runInShell;
   final Duration ipcConnectTimeout;
+  final Duration heartbeatInterval;
+  final Duration heartbeatTimeout;
   final Duration shutdownTimeout;
 
   Process? _process;
@@ -25,8 +27,12 @@ class RWKVProcess implements RWKV {
   StreamSubscription<String>? _protocolSubscription;
   StreamSubscription<String>? _stdoutSubscription;
   StreamSubscription<String>? _stderrSubscription;
+  Timer? _heartbeatTimer;
+  Timer? _heartbeatTimeoutTimer;
   Future<void> _sendQueue = Future<void>.value();
   bool _closing = false;
+  DateTime? _lastProtocolActivityAt;
+  String? _heartbeatRequestId;
 
   final Map<String, Completer<dynamic>> _pendingFutures = {};
   final Map<String, StreamController<dynamic>> _pendingStreams = {};
@@ -39,6 +45,8 @@ class RWKVProcess implements RWKV {
     this.includeParentEnvironment = true,
     this.runInShell = false,
     this.ipcConnectTimeout = const Duration(seconds: 2),
+    this.heartbeatInterval = const Duration(seconds: 15),
+    this.heartbeatTimeout = const Duration(seconds: 5),
     this.shutdownTimeout = const Duration(seconds: 5),
   }) : arguments = List.unmodifiable(arguments);
 
@@ -107,6 +115,12 @@ class RWKVProcess implements RWKV {
   }
 
   void _routeMessage(WorkerMessage message) {
+    _markProtocolActivity();
+    if (message.method == WorkerMethod.heartbeat) {
+      _resolveHeartbeat(message);
+      return;
+    }
+
     final future = _pendingFutures.remove(message.id);
     if (future != null) {
       if (message.error.isNotEmpty) {
@@ -130,6 +144,92 @@ class RWKVProcess implements RWKV {
       return;
     }
     stream.add(message.param);
+  }
+
+  void _markProtocolActivity() {
+    _lastProtocolActivityAt = DateTime.now();
+  }
+
+  void _startHeartbeatLoop() {
+    _stopHeartbeatLoop();
+    if (heartbeatInterval <= Duration.zero || heartbeatTimeout <= Duration.zero) {
+      return;
+    }
+    _heartbeatTimer = Timer.periodic(heartbeatInterval, (_) {
+      _maybeSendHeartbeat();
+    });
+  }
+
+  void _stopHeartbeatLoop() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimeoutTimer?.cancel();
+    _heartbeatTimer = null;
+    _heartbeatTimeoutTimer = null;
+    _heartbeatRequestId = null;
+  }
+
+  void _maybeSendHeartbeat() {
+    if (_closing || _protocolOutput == null || _process == null) {
+      return;
+    }
+    if (_heartbeatRequestId != null) {
+      return;
+    }
+    if (_pendingFutures.isNotEmpty || _pendingStreams.isNotEmpty) {
+      return;
+    }
+
+    final lastActivityAt = _lastProtocolActivityAt;
+    if (lastActivityAt != null &&
+        DateTime.now().difference(lastActivityAt) < heartbeatInterval) {
+      return;
+    }
+
+    final message = WorkerMessage.request(WorkerMethod.heartbeat);
+    _heartbeatRequestId = message.id;
+    _heartbeatTimeoutTimer?.cancel();
+    _heartbeatTimeoutTimer = Timer(heartbeatTimeout, _onHeartbeatTimeout);
+    _send(message).catchError((Object _, StackTrace _) {
+      if (_heartbeatRequestId == message.id) {
+        _clearHeartbeatState();
+      }
+    });
+  }
+
+  void _resolveHeartbeat(WorkerMessage message) {
+    if (_heartbeatRequestId != message.id) {
+      return;
+    }
+    if (message.error.isNotEmpty) {
+      _onHeartbeatFailure(
+        'RWKV worker heartbeat failed: ${message.error}',
+      );
+      return;
+    }
+    _clearHeartbeatState();
+  }
+
+  void _clearHeartbeatState() {
+    _heartbeatRequestId = null;
+    _heartbeatTimeoutTimer?.cancel();
+    _heartbeatTimeoutTimer = null;
+  }
+
+  void _onHeartbeatTimeout() {
+    final heartbeatId = _heartbeatRequestId;
+    _clearHeartbeatState();
+    if (_closing || heartbeatId == null) {
+      return;
+    }
+    _onHeartbeatFailure(
+      'RWKV worker heartbeat timed out after '
+      '${heartbeatTimeout.inMilliseconds}ms',
+    );
+  }
+
+  void _onHeartbeatFailure(String error) {
+    _failPending(error);
+    _shutdownProcess().ignore();
   }
 
   void _closePendingStream(String id, {Object? error, StackTrace? stackTrace}) {
@@ -195,6 +295,7 @@ class RWKVProcess implements RWKV {
       }
       output.writeln(message.toLine());
       await output.flush();
+      _markProtocolActivity();
     });
     _sendQueue = sendFuture.catchError((Object _, StackTrace _) {});
     await sendFuture;
@@ -227,6 +328,8 @@ class RWKVProcess implements RWKV {
       );
       _ipcSocket = socket;
       _protocolOutput = socket;
+      _markProtocolActivity();
+      _startHeartbeatLoop();
       _protocolSubscription = socket
           .cast<List<int>>()
           .transform(utf8.decoder)
@@ -250,6 +353,7 @@ class RWKVProcess implements RWKV {
   }
 
   void _failPending(String error) {
+    _clearHeartbeatState();
     for (final completer in _pendingFutures.values) {
       if (!completer.isCompleted) {
         completer.completeError(error);
@@ -268,6 +372,7 @@ class RWKVProcess implements RWKV {
 
   Future<void> _shutdownProcess() async {
     _closing = true;
+    _stopHeartbeatLoop();
     final process = _process;
     _process = null;
     _startFuture = null;
@@ -312,11 +417,6 @@ class RWKVProcess implements RWKV {
   Future<String> dumpLog() => _callFuture<String>(WorkerMethod.dumpLog);
 
   @override
-  Future<String> dumpStateInfo() {
-    return _callFuture<String>(WorkerMethod.dumpStateInfo);
-  }
-
-  @override
   Stream<GenerationResponse> generate(GenerationParam param) {
     return _callStream<GenerationResponse>(WorkerMethod.generate, param);
   }
@@ -332,13 +432,7 @@ class RWKVProcess implements RWKV {
   }
 
   @override
-  Future<String> getHtpArch() => _callFuture<String>(WorkerMethod.getHtpArch);
-
-  @override
   Future<int> getSeed() => _callFuture<int>(WorkerMethod.getSeed);
-
-  @override
-  Future<String> getSocName() => _callFuture<String>(WorkerMethod.getSocName);
 
   @override
   Future init([InitParam? param]) =>
@@ -367,23 +461,8 @@ class RWKVProcess implements RWKV {
   }
 
   @override
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) {
-    return _callFuture<RunEvaluationResult>(WorkerMethod.runEvaluation, param);
-  }
-
-  @override
   Future setDecodeParam(DecodeParam param) {
     return _callFuture<dynamic>(WorkerMethod.setDecodeParam, param);
-  }
-
-  @override
-  Future setImage(String path) {
-    return _callFuture<dynamic>(WorkerMethod.setImage, path);
-  }
-
-  @override
-  Future setImageId(String id) {
-    return _callFuture<dynamic>(WorkerMethod.setImageId, id);
   }
 
   @override
@@ -399,8 +478,4 @@ class RWKVProcess implements RWKV {
   @override
   Future stopGenerate() => _callFuture<dynamic>(WorkerMethod.stopGenerate);
 
-  @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) {
-    return _callStream<List<double>>(WorkerMethod.textToSpeech, param);
-  }
 }

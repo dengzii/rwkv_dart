@@ -252,21 +252,14 @@ mixin _ProxyCombinedMixin implements RWKV {
     clearState,
     generate,
     release,
-    getHtpArch,
-    dumpStateInfo,
     dumpLog,
-    getSocName,
     loadInitialState,
-    textToSpeech,
-    setImage,
     setDecodeParam,
     getGenerationState,
     generationStateStream,
     stopGenerate,
     getSeed,
     setSeed,
-    setImageId,
-    runEvaluation,
   };
 
   @override
@@ -303,14 +296,6 @@ mixin _ProxyCombinedMixin implements RWKV {
       return callee!.generate(param);
     }
     return _call(generate, param).cast<GenerationResponse>();
-  }
-
-  @override
-  Future setImage(String path) {
-    if (callee != null) {
-      return callee!.setImage(path);
-    }
-    return _call(setImage, path);
   }
 
   @override
@@ -367,22 +352,6 @@ mixin _ProxyCombinedMixin implements RWKV {
   }
 
   @override
-  Future<String> getHtpArch() async {
-    if (callee != null) {
-      return callee!.getHtpArch();
-    }
-    return await _call(getHtpArch);
-  }
-
-  @override
-  Future<String> getSocName() async {
-    if (callee != null) {
-      return callee!.getSocName();
-    }
-    return await _call(getSocName);
-  }
-
-  @override
   Future<int> getSeed() async {
     if (callee != null) {
       return callee!.getSeed();
@@ -395,35 +364,4 @@ mixin _ProxyCombinedMixin implements RWKV {
     return callee?.setSeed(seed) ?? _call(setSeed, seed);
   }
 
-  @override
-  Future<RunEvaluationResult> runEvaluation(RunEvaluationParam param) async {
-    if (callee != null) {
-      return callee!.runEvaluation(param);
-    }
-    return await _call(runEvaluation, param);
-  }
-
-  @override
-  Future<String> dumpStateInfo() async {
-    if (callee != null) {
-      return callee!.dumpStateInfo();
-    }
-    return await _call(dumpStateInfo);
-  }
-
-  @override
-  Future setImageId(String id) {
-    if (callee != null) {
-      return callee!.setImageId(id);
-    }
-    return _call(setImageId, id);
-  }
-
-  @override
-  Stream<List<double>> textToSpeech(TextToSpeechParam param) {
-    if (callee != null) {
-      return callee!.textToSpeech(param);
-    }
-    return _call(textToSpeech, param).cast<List<double>>();
-  }
 }
