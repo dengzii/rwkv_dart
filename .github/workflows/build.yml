@@ -2,9 +2,8 @@ name: Build
 
 on:
   push:
-    branches: ["**"]
-  pull_request:
-    branches: [master, main]
+    tags:
+      - "**"
   workflow_dispatch:
 
 jobs:
@@ -119,3 +118,21 @@ jobs:
           name: rwkv-worker-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: rwkv-worker-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.archive_ext }}
           if-no-files-found: error
+
+  release:
+    needs: [setup, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: artifacts/*
