@@ -1,0 +1,54 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            cli_out: bin/rwkv-cli
+            worker_out: bin/rwkv-worker
+          - os: macos-latest
+            platform: macos
+            cli_out: bin/rwkv-cli
+            worker_out: bin/rwkv-worker
+          - os: windows-latest
+            platform: windows
+            cli_out: bin/rwkv-cli.exe
+            worker_out: bin/rwkv-worker.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Build cli
+        run: dart compile exe bin/cli.dart -o ${{ matrix.cli_out }}
+
+      - name: Build worker
+        run: dart compile exe bin/worker.dart -o ${{ matrix.worker_out }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rwkv-binaries-${{ matrix.platform }}
+          path: |
+            ${{ matrix.cli_out }}
+            ${{ matrix.worker_out }}
+          if-no-files-found: error
