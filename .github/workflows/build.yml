@@ -1,0 +1,138 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version
+        id: version
+        run: echo "version=$(grep '^version:' pubspec.yaml | awk '{print $2}')" >> $GITHUB_OUTPUT
+
+  build:
+    needs: setup
+    name: Build (${{ matrix.platform }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            exe_ext: ""
+            archive_ext: tar.gz
+            libs_asset: librwkv_mobile-dev-latest-linux-x86_64.zip
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            exe_ext: ""
+            archive_ext: tar.gz
+            libs_asset: librwkv_mobile-dev-latest-macos.zip
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            exe_ext: ".exe"
+            archive_ext: zip
+            libs_asset: librwkv_mobile-dev-latest-windows-x64.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Build cli
+        run: dart compile exe bin/cli.dart -o bin/rwkv-cli${{ matrix.exe_ext }}
+
+      - name: Build worker
+        run: dart compile exe bin/worker.dart -o bin/rwkv-worker${{ matrix.exe_ext }}
+
+      - name: Download rwkv_libs
+        run: >
+          curl -fsSL
+          "https://github.com/dengzii/rwkv_libs/releases/download/latest/${{ matrix.libs_asset }}"
+          -o libs.zip
+
+      - name: Extract libs (Unix)
+        if: runner.os != 'Windows'
+        run: unzip libs.zip -d libs/
+
+      - name: Extract libs (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Expand-Archive -Path libs.zip -DestinationPath libs/
+
+      - name: Stage and package (Unix)
+        if: runner.os != 'Windows'
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p dist/cli dist/worker
+          cp bin/rwkv-cli dist/cli/
+          cp bin/rwkv-worker dist/worker/
+          cp libs/* dist/cli/
+          cp libs/* dist/worker/
+          tar czf "rwkv-cli-v${VERSION}-${PLATFORM}-${ARCH}.tar.gz" -C dist/cli .
+          tar czf "rwkv-worker-v${VERSION}-${PLATFORM}-${ARCH}.tar.gz" -C dist/worker .
+
+      - name: Stage and package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          $v = $env:VERSION
+          New-Item -ItemType Directory -Path dist/cli, dist/worker | Out-Null
+          Copy-Item bin/rwkv-cli.exe dist/cli/
+          Copy-Item bin/rwkv-worker.exe dist/worker/
+          Copy-Item libs/* dist/cli/
+          Copy-Item libs/* dist/worker/
+          Compress-Archive -Path dist/cli/* -DestinationPath "rwkv-cli-v$v-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          Compress-Archive -Path dist/worker/* -DestinationPath "rwkv-worker-v$v-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+
+      - name: Upload cli
+        uses: actions/upload-artifact@v4
+        with:
+          name: rwkv-cli-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: rwkv-cli-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.archive_ext }}
+          if-no-files-found: error
+
+      - name: Upload worker
+        uses: actions/upload-artifact@v4
+        with:
+          name: rwkv-worker-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: rwkv-worker-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.archive_ext }}
+          if-no-files-found: error
+
+  release:
+    needs: [setup, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: artifacts/*
