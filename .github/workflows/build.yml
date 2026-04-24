@@ -8,8 +8,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version
+        id: version
+        run: echo "version=$(grep '^version:' pubspec.yaml | awk '{print $2}')" >> $GITHUB_OUTPUT
+
   build:
-    name: Build (${{ matrix.platform }})
+    needs: setup
+    name: Build (${{ matrix.platform }}-${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -17,16 +28,19 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux
-            cli_out: bin/rwkv-cli
-            worker_out: bin/rwkv-worker
+            arch: x64
+            exe_ext: ""
+            archive_ext: tar.gz
           - os: macos-latest
             platform: macos
-            cli_out: bin/rwkv-cli
-            worker_out: bin/rwkv-worker
+            arch: arm64
+            exe_ext: ""
+            archive_ext: tar.gz
           - os: windows-latest
             platform: windows
-            cli_out: bin/rwkv-cli.exe
-            worker_out: bin/rwkv-worker.exe
+            arch: x64
+            exe_ext: ".exe"
+            archive_ext: zip
 
     steps:
       - uses: actions/checkout@v4
@@ -39,16 +53,39 @@ jobs:
         run: dart pub get
 
       - name: Build cli
-        run: dart compile exe bin/cli.dart -o ${{ matrix.cli_out }}
+        run: dart compile exe bin/cli.dart -o bin/rwkv-cli${{ matrix.exe_ext }}
 
       - name: Build worker
-        run: dart compile exe bin/worker.dart -o ${{ matrix.worker_out }}
+        run: dart compile exe bin/worker.dart -o bin/rwkv-worker${{ matrix.exe_ext }}
 
-      - name: Upload artifacts
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          tar czf "rwkv-cli-v${VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" -C bin rwkv-cli
+          tar czf "rwkv-worker-v${VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" -C bin rwkv-worker
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          $v = $env:VERSION
+          Compress-Archive -Path bin/rwkv-cli.exe -DestinationPath "rwkv-cli-v$v-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          Compress-Archive -Path bin/rwkv-worker.exe -DestinationPath "rwkv-worker-v$v-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+
+      - name: Upload cli
         uses: actions/upload-artifact@v4
         with:
-          name: rwkv-binaries-${{ matrix.platform }}
-          path: |
-            ${{ matrix.cli_out }}
-            ${{ matrix.worker_out }}
+          name: rwkv-cli-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: rwkv-cli-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.archive_ext }}
+          if-no-files-found: error
+
+      - name: Upload worker
+        uses: actions/upload-artifact@v4
+        with:
+          name: rwkv-worker-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: rwkv-worker-v${{ needs.setup.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.archive_ext }}
           if-no-files-found: error
